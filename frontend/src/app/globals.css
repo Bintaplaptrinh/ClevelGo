@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+@keyframes liquid-border {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 24px 80px rgba(29, 121, 242, 0.15),
+      0 0 0 1px rgba(29, 121, 242, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 28px 100px rgba(29, 121, 242, 0.28),
+      0 0 0 1px rgba(29, 121, 242, 0.26),
+      0 0 42px rgba(29, 121, 242, 0.28);
+  }
+}
+
+@keyframes caret-blink {
+  0%,
+  46% {
+    opacity: 1;
+  }
+  47%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.liquid-glass::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.62)),
+    radial-gradient(circle at 25% 10%, rgba(29, 121, 242, 0.18), transparent 34%),
+    radial-gradient(circle at 80% 90%, rgba(21, 214, 161, 0.14), transparent 28%);
+  content: "";
+}
+
+.thinking-border {
+  border-color: transparent;
+  animation: glow-pulse 1.45s ease-in-out infinite;
+  background:
+    linear-gradient(white, white) padding-box,
+    linear-gradient(115deg, rgba(29, 121, 242, 0.2), #1d79f2, rgba(21, 214, 161, 0.76), #1d79f2) border-box;
+  background-size: 100% 100%, 260% 260%;
+}
+
+.thinking-border::after {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  border-radius: inherit;
+  background: linear-gradient(115deg, rgba(29, 121, 242, 0.1), rgba(29, 121, 242, 0.42), rgba(21, 214, 161, 0.2));
+  background-size: 260% 260%;
+  content: "";
+  filter: blur(22px);
+  opacity: 0.8;
+  animation: liquid-border 2.2s ease infinite;
+}
+
+.animate-caret {
+  animation: caret-blink 0.86s steps(1) infinite;
+}
