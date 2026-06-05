@@ -12,6 +12,16 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+## Deployment
+
+Set `ALLOWED_ORIGINS` to every browser origin that can call the API. Origins
+must not include paths. Trailing slashes and accidental quotes are normalized by
+the backend, but the clean Render value should be:
+
+```text
+ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://clevelgo.pages.dev,https://bintaplaptrinh.io.vn
+```
+
 ## Endpoints
 
 - `GET /api/health`
