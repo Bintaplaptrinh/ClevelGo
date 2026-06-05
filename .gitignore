@@ -41,6 +41,15 @@ yarn-error.log*
 # vercel
 .vercel
 
+# firebase hosting leftovers
+/frontend/.firebase/
+/frontend/.firebaserc
+/frontend/firebase.json
+/frontend/.gitignore
+/frontend/public/index.html
+/frontend/public/404.html
+/.github/workflows/firebase-hosting*.yml
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -6,6 +6,7 @@
     "dev": "node node_modules/next/dist/bin/next dev --webpack",
     "build": "node node_modules/next/dist/bin/next build",
     "start": "node node_modules/next/dist/bin/next start",
+    "export": "node node_modules/next/dist/bin/next build",
     "lint": "node node_modules/eslint/bin/eslint.js"
   },
   "dependencies": {
