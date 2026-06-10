@@ -398,7 +398,7 @@ function parseChart(source: string): ChartData | null {
 
 function renderInline(text: string, citations: CitationSource[] = []): ReactNode[] {
   const parts: ReactNode[] = [];
-  const pattern = /(\[[^\]]+\]\(https?:\/\/[^)]+\)|\[\d+\]|`[^`]+`|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  const pattern = /(\$[^$\n]+\$|\[[^\]]+\]\(https?:\/\/[^)]+\)|\[\d+\]|`[^`]+`|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -410,7 +410,13 @@ function renderInline(text: string, citations: CitationSource[] = []): ReactNode
     const token = match[0];
     const key = `${match.index}-${token}`;
 
-    if (token.startsWith("`")) {
+    if (token.startsWith("$")) {
+      parts.push(
+        <span key={key} className="inline-math">
+          {renderInlineMath(token.slice(1, -1))}
+        </span>,
+      );
+    } else if (token.startsWith("`")) {
       parts.push(
         <code key={key} className="rounded bg-slate-100 px-1 py-0.5 text-[0.92em] text-slate-800">
           {token.slice(1, -1)}
@@ -480,4 +486,44 @@ function renderInline(text: string, citations: CitationSource[] = []): ReactNode
   }
 
   return parts;
+}
+
+function renderInlineMath(source: string) {
+  const replacements: Record<string, string> = {
+    "\\alpha": "α",
+    "\\beta": "β",
+    "\\gamma": "γ",
+    "\\delta": "δ",
+    "\\epsilon": "ε",
+    "\\lambda": "λ",
+    "\\mu": "μ",
+    "\\pi": "π",
+    "\\sigma": "σ",
+    "\\theta": "θ",
+    "\\omega": "ω",
+    "\\rightarrow": "→",
+    "\\to": "→",
+    "\\leftarrow": "←",
+    "\\leftrightarrow": "↔",
+    "\\Rightarrow": "⇒",
+    "\\Leftarrow": "⇐",
+    "\\Leftrightarrow": "⇔",
+    "\\uparrow": "↑",
+    "\\downarrow": "↓",
+    "\\times": "×",
+    "\\cdot": "·",
+    "\\div": "÷",
+    "\\pm": "±",
+    "\\le": "≤",
+    "\\leq": "≤",
+    "\\ge": "≥",
+    "\\geq": "≥",
+    "\\ne": "≠",
+    "\\neq": "≠",
+    "\\approx": "≈",
+    "\\equiv": "≡",
+    "\\infty": "∞",
+  };
+
+  return source.replace(/\\[A-Za-z]+/g, (command) => replacements[command] ?? command);
 }

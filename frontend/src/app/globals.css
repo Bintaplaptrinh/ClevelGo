@@ -98,3 +98,9 @@ input {
 .animate-caret {
   animation: caret-blink 0.86s steps(1) infinite;
 }
+
+.inline-math {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.95em;
+  white-space: nowrap;
+}
