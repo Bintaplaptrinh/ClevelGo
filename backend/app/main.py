@@ -73,7 +73,7 @@ async def chat(
     if is_new_conversation:
         history.ensure_conversation(conversation_id, payload.message.strip())
 
-    context = await prepare_context(payload.message.strip(), uploads)
+    context = await prepare_context(payload.message.strip(), uploads, client_timezone=payload.client_timezone)
     user_message = history.add_message(
         conversation_id,
         "user",
@@ -155,9 +155,14 @@ async def parse_chat_payload(request: Request) -> tuple[ChatRequest, list[Upload
         form = await request.form()
         message = str(form.get("message") or "").strip()
         conversation_id = form.get("conversationId") or form.get("conversation_id")
+        client_timezone = form.get("clientTimezone") or form.get("client_timezone")
         uploads = [item for item in form.getlist("files") if hasattr(item, "filename") and hasattr(item, "read")]
         try:
-            payload = ChatRequest(message=message, conversationId=str(conversation_id) if conversation_id else None)
+            payload = ChatRequest(
+                message=message,
+                conversationId=str(conversation_id) if conversation_id else None,
+                clientTimezone=str(client_timezone) if client_timezone else None,
+            )
         except Exception as exc:
             raise HTTPException(status_code=422, detail="Invalid chat request") from exc
         return payload, uploads

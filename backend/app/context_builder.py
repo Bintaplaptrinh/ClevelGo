@@ -28,6 +28,14 @@ EXPLICIT_WEB_INTENT_RE = re.compile(
     r"\b(search|look up|news|sources?|citations?|references?|web|internet|find)\b",
     re.IGNORECASE,
 )
+SOURCE_REQUIRED_RE = re.compile(
+    r"\b(latest|current|today|news|sources?|citations?|references?|official|verify|fact-check|address|phone|email|website)\b",
+    re.IGNORECASE,
+)
+WRITING_TASK_RE = re.compile(
+    r"\b(write|draft|compose|essay|article|report|thesis|speech|outline|rewrite|translate|summarize)\b",
+    re.IGNORECASE,
+)
 VIETNAMESE_SEARCH_PHRASES = (
     "cung cap",
     "thong tin",
@@ -54,6 +62,57 @@ VIETNAMESE_SEARCH_PHRASES = (
     "to chuc",
     "la gi",
     "o dau",
+)
+VIETNAMESE_WRITING_PHRASES = (
+    "viet",
+    "soan",
+    "lap dan y",
+    "luan van",
+    "tieu luan",
+    "bai luan",
+    "bai viet",
+    "bai van",
+    "doan van",
+    "mo bai",
+    "ket bai",
+    "dich",
+    "tom tat",
+)
+VIETNAMESE_SOURCE_REQUEST_PHRASES = (
+    "nguon",
+    "dan chung",
+    "trich dan",
+    "tai lieu tham khao",
+    "kiem chung",
+    "xac minh",
+    "chinh thuc",
+    "moi nhat",
+    "hien nay",
+    "cap nhat",
+)
+VIETNAMESE_FACT_DETAIL_PHRASES = (
+    "cung cap thong tin",
+    "thong tin ve",
+    "cho biet",
+    "tra cuu",
+    "dia chi",
+    "so dien thoai",
+    "email",
+    "website",
+    "ma truong",
+    "tuyen sinh",
+)
+VIETNAMESE_REAL_ENTITY_TERMS = (
+    "phan hieu",
+    "dai hoc",
+    "truong",
+    "cong ty",
+    "to chuc",
+    "benh vien",
+    "co quan",
+    "chinh sach",
+    "quy dinh",
+    "luat",
 )
 QUERY_STOP_WORDS = {
     "a",
@@ -104,7 +163,12 @@ SEARCH_QUERY_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 WEATHER_RE = re.compile(r"\b(?:weather|temperature|forecast)\b(?:\s+(?:in|for|at))?\s+([A-Za-z][A-Za-z\s,.-]{1,80})?", re.IGNORECASE)
-TIME_RE = re.compile(r"\b(?:time|clock)\b(?:\s+(?:in|for|at))?\s+([A-Za-z][A-Za-z\s,.-]{1,80})?", re.IGNORECASE)
+TIME_RE = re.compile(r"\b(?:time|clock)\b", re.IGNORECASE)
+TIME_LOCATION_PATTERNS = (
+    re.compile(r"\bwhat\s+time\s+is\s+it\s+(?:in|for|at)\s+(.+?)\s*[?.!]*$", re.IGNORECASE),
+    re.compile(r"\bwhat\s+is\s+the\s+time\s+(?:in|for|at)\s+(.+?)\s*[?.!]*$", re.IGNORECASE),
+    re.compile(r"\b(?:current\s+time|time|clock)\s+(?:in|for|at)\s+(.+?)\s*[?.!]*$", re.IGNORECASE),
+)
 
 MAX_URLS = 3
 MAX_SEARCH_RESULTS = 8
@@ -207,7 +271,11 @@ class DuckDuckGoParser(HTMLParser):
             self._active_snippet.append(data)
 
 
-async def prepare_context(message: str, uploads: Sequence[UploadFile]) -> PreparedContext:
+async def prepare_context(
+    message: str,
+    uploads: Sequence[UploadFile],
+    client_timezone: str | None = None,
+) -> PreparedContext:
     sources: list[CitationSource] = []
     attachments: list[AttachmentSummary] = []
     urls = extract_urls(message)
@@ -225,13 +293,13 @@ async def prepare_context(message: str, uploads: Sequence[UploadFile]) -> Prepar
             sources.append(source)
 
     if not sources and should_search_web(message):
-        requires_sources = True
+        requires_sources = requires_sources or should_require_sources(message)
         sources.extend(search_and_fetch_web(message))
 
     for index, source in enumerate(sources, start=1):
         source.id = index
 
-    widgets = build_widgets(message)
+    widgets = build_widgets(message, client_timezone=client_timezone)
 
     return PreparedContext(
         sources=sources,
@@ -255,6 +323,33 @@ def should_search_web(message: str) -> bool:
     if EXTERNAL_FACT_RE.search(cleaned) and not looks_like_code_or_sql_task(cleaned):
         return True
     return has_vietnamese_letters(cleaned) and len(cleaned.split()) >= 4 and not looks_like_code_or_sql_task(cleaned)
+
+
+def should_require_sources(message: str) -> bool:
+    cleaned = message.strip()
+    if not cleaned or is_widget_only_request(cleaned) or looks_like_code_or_sql_task(cleaned):
+        return False
+
+    normalized = strip_vietnamese_accents(cleaned)
+    if is_writing_task(cleaned, normalized) and not asks_for_source_evidence(cleaned, normalized):
+        return False
+    if asks_for_source_evidence(cleaned, normalized):
+        return True
+    if any(phrase in normalized for phrase in VIETNAMESE_FACT_DETAIL_PHRASES) and any(
+        term in normalized for term in VIETNAMESE_REAL_ENTITY_TERMS
+    ):
+        return True
+    return bool(EXTERNAL_FACT_RE.search(cleaned))
+
+
+def is_writing_task(message: str, normalized: str) -> bool:
+    return bool(WRITING_TASK_RE.search(message)) or any(phrase in normalized for phrase in VIETNAMESE_WRITING_PHRASES)
+
+
+def asks_for_source_evidence(message: str, normalized: str) -> bool:
+    return bool(SOURCE_REQUIRED_RE.search(message)) or any(
+        phrase in normalized for phrase in VIETNAMESE_SOURCE_REQUEST_PHRASES
+    )
 
 
 def is_widget_only_request(message: str) -> bool:
@@ -367,10 +462,31 @@ def search_web(query: str) -> list[CitationSource]:
 
 def build_search_query(message: str) -> str:
     cleaned = " ".join(message.strip().split())
+    writing_topic = extract_writing_topic(cleaned)
+    if writing_topic:
+        return writing_topic
     stripped = SEARCH_QUERY_PREFIX_RE.sub("", cleaned).strip(" .?!:")
     if len(stripped.split()) >= 2:
         return stripped
     return cleaned
+
+
+def extract_writing_topic(message: str) -> str | None:
+    normalized = strip_vietnamese_accents(message)
+    if not is_writing_task(message, normalized):
+        return None
+
+    quoted_topic = re.search(r"[\"']([^\"']{8,220})[\"']", message)
+    if quoted_topic:
+        return quoted_topic.group(1).strip(" .?!:")
+
+    for separator in (" ve ", " about ", " on "):
+        index = normalized.rfind(separator)
+        if index != -1:
+            topic = message[index + len(separator) :].strip(" .?!:")
+            if len(topic.split()) >= 2:
+                return topic
+    return None
 
 
 def build_search_queries(message: str) -> list[str]:
@@ -554,7 +670,7 @@ def summarize_text(kind: str, text: str) -> str:
     return f"{kind} text extracted: {text[:420]}"
 
 
-def build_widgets(message: str) -> list[ChatWidget]:
+def build_widgets(message: str, *, client_timezone: str | None = None) -> list[ChatWidget]:
     widgets: list[ChatWidget] = []
     weather_location = extract_widget_location(WEATHER_RE, message)
     if weather_location:
@@ -562,9 +678,9 @@ def build_widgets(message: str) -> list[ChatWidget]:
         if weather:
             widgets.append(weather)
 
-    time_location = extract_widget_location(TIME_RE, message)
+    time_location = extract_time_location(message)
     if time_location or re.search(r"\bcurrent time\b|\bwhat time\b", message, re.IGNORECASE):
-        time_widget = build_time_widget(time_location)
+        time_widget = build_time_widget(time_location, client_timezone=client_timezone)
         if time_widget:
             widgets.append(time_widget)
 
@@ -579,6 +695,24 @@ def extract_widget_location(pattern: re.Pattern[str], message: str) -> str | Non
     if not location or location.lower() in {"now", "today", "outside"}:
         return None
     return location
+
+
+def extract_time_location(message: str) -> str | None:
+    for pattern in TIME_LOCATION_PATTERNS:
+        match = pattern.search(message.strip())
+        if not match:
+            continue
+        location = clean_widget_location(match.group(1))
+        if location:
+            return location
+    return None
+
+
+def clean_widget_location(location: str) -> str | None:
+    cleaned = re.sub(r"\s+", " ", location).strip(" .?!")
+    if not cleaned or cleaned.lower() in {"now", "today", "outside", "it"}:
+        return None
+    return cleaned
 
 
 def build_weather_widget(location: str) -> ChatWidget | None:
@@ -649,13 +783,16 @@ def build_forecast(daily: dict) -> list[dict[str, str | float]]:
     return forecast
 
 
-def build_time_widget(location: str | None) -> ChatWidget | None:
+def build_time_widget(location: str | None, *, client_timezone: str | None = None) -> ChatWidget | None:
     label = location or "Local"
     timezone_name: str | None = None
     if location:
         geocode = geocode_location(location)
         timezone_name = str(geocode.get("timezone")) if geocode else None
         label = str(geocode.get("name") or location) if geocode else location
+    elif client_timezone and is_valid_timezone(client_timezone):
+        timezone_name = client_timezone
+        label = "Local"
 
     try:
         now = datetime.now(ZoneInfo(timezone_name)) if timezone_name else datetime.now().astimezone()
@@ -672,6 +809,14 @@ def build_time_widget(location: str | None) -> ChatWidget | None:
             "time": now.strftime("%H:%M"),
         },
     )
+
+
+def is_valid_timezone(timezone_name: str) -> bool:
+    try:
+        ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return False
+    return True
 
 
 def geocode_location(location: str) -> dict[str, str | float] | None:

@@ -96,6 +96,7 @@ type AgentRequest = {
   message: string;
   conversationId: string;
   files?: File[];
+  clientTimezone?: string;
 };
 
 type AgentResponse = {
@@ -142,19 +143,24 @@ function safeRemoveConversationId() {
   }
 }
 
-async function requestAgentResponse({ message, conversationId, files = [] }: AgentRequest): Promise<AgentResponse> {
+async function requestAgentResponse({
+  message,
+  conversationId,
+  files = [],
+  clientTimezone = getClientTimezone(),
+}: AgentRequest): Promise<AgentResponse> {
   const requestInit: RequestInit =
     files.length > 0
       ? {
           method: "POST",
-          body: buildChatFormData(message, conversationId, files),
+          body: buildChatFormData(message, conversationId, files, clientTimezone),
         }
       : {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ message, conversationId }),
+          body: JSON.stringify({ message, conversationId, clientTimezone }),
         };
 
   const response = await fetch(`${apiBaseUrl}/api/chat`, requestInit);
@@ -173,10 +179,21 @@ async function requestAgentResponse({ message, conversationId, files = [] }: Age
   return response.json() as Promise<AgentResponse>;
 }
 
-function buildChatFormData(message: string, conversationId: string, files: File[]) {
+function getClientTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildChatFormData(message: string, conversationId: string, files: File[], clientTimezone?: string) {
   const formData = new FormData();
   formData.set("message", message);
   formData.set("conversationId", conversationId);
+  if (clientTimezone) {
+    formData.set("clientTimezone", clientTimezone);
+  }
   files.forEach((file) => formData.append("files", file));
   return formData;
 }
@@ -409,7 +426,12 @@ export function ChatShell({ onAgentRequest = requestAgentResponse }: ChatShellPr
     setIsThinking(true);
 
     try {
-      const response = await onAgentRequest({ message, conversationId: activeConversationId, files });
+      const response = await onAgentRequest({
+        message,
+        conversationId: activeConversationId,
+        files,
+        clientTimezone: getClientTimezone(),
+      });
       conversationIdRef.current = response.conversationId;
       safeSetConversationId(response.conversationId);
       setActiveConversationId(response.conversationId);

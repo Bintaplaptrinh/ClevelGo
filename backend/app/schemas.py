@@ -13,6 +13,7 @@ class ChatRequest(BaseModel):
 
     message: str = Field(min_length=1, max_length=12000)
     conversation_id: str | None = Field(default=None, alias="conversationId")
+    client_timezone: str | None = Field(default=None, alias="clientTimezone")
 
 
 class CitationSource(BaseModel):
