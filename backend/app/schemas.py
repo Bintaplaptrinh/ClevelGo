@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,6 +15,34 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = Field(default=None, alias="conversationId")
 
 
+class CitationSource(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int
+    title: str
+    url: str | None = None
+    snippet: str = ""
+    source_type: Literal["web", "url", "file"] = Field(default="web", alias="sourceType")
+
+
+class ChatWidget(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    widget_type: Literal["time", "weather"] = Field(alias="widgetType")
+    title: str
+    data: dict[str, Any]
+
+
+class AttachmentSummary(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    name: str
+    mime_type: str = Field(alias="mimeType")
+    size: int
+    summary: str = ""
+
+
 class ChatMessage(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -23,6 +52,9 @@ class ChatMessage(BaseModel):
     content: str
     created_at: datetime = Field(alias="createdAt")
     status: Literal["completed", "failed"] = "completed"
+    citations: list[CitationSource] = Field(default_factory=list)
+    widgets: list[ChatWidget] = Field(default_factory=list)
+    attachments: list[AttachmentSummary] = Field(default_factory=list)
 
 
 class ConversationSummary(BaseModel):
@@ -45,6 +77,9 @@ class ChatResponse(BaseModel):
     content: str
     messages: list[ChatMessage]
     conversation: ConversationSummary
+    citations: list[CitationSource] = Field(default_factory=list)
+    widgets: list[ChatWidget] = Field(default_factory=list)
+    attachments: list[AttachmentSummary] = Field(default_factory=list)
 
 
 class ConversationHistoryResponse(BaseModel):

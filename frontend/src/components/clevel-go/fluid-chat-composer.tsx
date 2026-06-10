@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowUp, Loader2, Sparkles } from "lucide-react";
+import { ArrowUp, FileText, Loader2, Paperclip, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -12,7 +12,7 @@ type FluidChatComposerProps = {
   disabled?: boolean;
   forceDocked?: boolean;
   isThinking?: boolean;
-  onSubmit: (message: string) => void;
+  onSubmit: (message: string, files: File[]) => void;
 };
 
 const spring = {
@@ -29,8 +29,12 @@ export function FluidChatComposer({
   onSubmit,
 }: FluidChatComposerProps) {
   const [value, setValue] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
   const [phase, setPhase] = useState<ComposerPhase>(forceDocked ? "bottom" : "idle");
   const [fallDistance, setFallDistance] = useState(360);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const shouldReduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -104,24 +108,81 @@ export function FluidChatComposer({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const message = value.trim();
+    const message = value.trim() || (selectedFiles.length > 0 ? "Summarize the uploaded PDF." : "");
 
-    if (!message || disabled || (phase !== "idle" && phase !== "bottom")) {
+    if ((!message && selectedFiles.length === 0) || disabled || (phase !== "idle" && phase !== "bottom")) {
       return;
     }
 
+    const files = selectedFiles;
     setValue("");
+    setSelectedFiles([]);
+    setFileError("");
     if (phase === "idle") {
       runSequence();
     }
-    onSubmit(message);
+    onSubmit(message, files);
+  };
+
+  const addFiles = (files: FileList | null) => {
+    if (!files) {
+      return;
+    }
+
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    const currentKeys = new Set(selectedFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+
+    for (const file of Array.from(files)) {
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const key = `${file.name}-${file.size}-${file.lastModified}`;
+
+      if (!isPdf || file.size > 8 * 1024 * 1024 || currentKeys.has(key)) {
+        rejected.push(file.name);
+        continue;
+      }
+
+      accepted.push(file);
+      currentKeys.add(key);
+    }
+
+    setSelectedFiles((current) => [...current, ...accepted].slice(0, 3));
+    setFileError(rejected.length > 0 ? `PDF only. Skipped ${rejected.join(", ")}` : "");
   };
 
   const isCompact = phase !== "idle" && phase !== "bottom";
+
+  const handleDrag = (event: DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!disabled && !isThinking && !isCompact) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+
+    if (disabled || isThinking || isCompact) {
+      return;
+    }
+
+    addFiles(event.dataTransfer.files);
+  };
+
   const isDocked = phase === "bottom";
+  const canSubmit = Boolean(value.trim() || selectedFiles.length > 0) && !disabled && !isThinking;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-30" aria-live="polite">
+    <div className="pointer-events-none fixed inset-y-0 left-0 right-0 z-30 lg:left-[260px]" aria-live="polite">
       <svg className="pointer-events-none absolute h-0 w-0" aria-hidden="true">
         <filter id="gooey-liquid">
           <feGaussianBlur in="SourceGraphic" result="blur" stdDeviation="9" />
@@ -146,15 +207,28 @@ export function FluidChatComposer({
       >
         <motion.form
           onSubmit={handleSubmit}
+          onDragEnter={handleDrag}
+          onDragOver={handleDrag}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           className={cn(
-            "liquid-glass relative isolate overflow-hidden border border-white/70 bg-white/78 px-4 py-3 shadow-[0_28px_90px_rgba(29,121,242,0.16)] backdrop-blur-2xl",
-            isThinking ? "thinking-border" : "border-slate-200/80",
+            "liquid-glass relative isolate overflow-hidden border bg-white/78 px-4 py-3 shadow-[0_28px_90px_rgba(29,121,242,0.16)] backdrop-blur-2xl",
+            isDragging
+              ? "border-[#1D79F2]/70 ring-2 ring-[#1D79F2]/20"
+              : isThinking
+                ? "thinking-border"
+                : "border-white/70",
           )}
           animate={controls[phase]}
           initial={false}
           transition={spring}
           style={{ filter: isCompact ? "url(#gooey-liquid)" : undefined }}
         >
+          {isDragging && !isCompact ? (
+            <div className="pointer-events-none absolute inset-2 z-20 grid place-items-center rounded-[20px] border-2 border-dashed border-[#1D79F2]/50 bg-white/72 text-sm font-semibold text-[#1D79F2] backdrop-blur-xl">
+              Drop PDF here
+            </div>
+          ) : null}
           <AnimatePresence mode="wait">
             {!isCompact ? (
               <motion.div
@@ -165,8 +239,51 @@ export function FluidChatComposer({
                 transition={{ duration: 0.16 }}
                 className="relative z-10 flex h-full flex-col gap-3"
               >
+                {selectedFiles.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 pl-1">
+                    {selectedFiles.map((file, index) => (
+                      <span
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white/78 px-2.5 py-1 text-xs font-medium text-slate-600"
+                      >
+                        <FileText className="size-3.5 shrink-0 text-[#1D79F2]" />
+                        <span className="max-w-[180px] truncate">{file.name}</span>
+                        <button
+                          type="button"
+                          className="grid size-4 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                          onClick={() => setSelectedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}
+                          aria-label={`Remove ${file.name}`}
+                          title="Remove"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
                 <div className="flex items-start gap-3">
-                  <Sparkles className="mt-1 size-4 shrink-0 text-[#1D79F2]" />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    multiple
+                    hidden
+                    onChange={(event) => {
+                      addFiles(event.target.files);
+                      event.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={disabled || isThinking}
+                    className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full border border-slate-200 bg-white/70 text-slate-500 transition hover:border-[#1D79F2]/50 hover:text-[#1D79F2] disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Attach PDF"
+                    title="Attach PDF"
+                  >
+                    <Paperclip className="size-4" />
+                  </button>
                   <textarea
                     value={value}
                     onChange={(event) => setValue(event.target.value)}
@@ -178,12 +295,12 @@ export function FluidChatComposer({
                     }}
                     disabled={disabled || isThinking}
                     rows={isDocked ? 1 : 3}
-                    placeholder="Ask Clevel Go to profile a table, explain a pipeline, or draft a SQL transform..."
+                    placeholder="Ask Clevel Go to summarize a PDF, research a topic, plan work, or draft a response..."
                     className="min-h-10 flex-1 resize-none bg-transparent text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
                   />
                   <button
                     type="submit"
-                    disabled={!value.trim() || disabled || isThinking}
+                    disabled={!canSubmit}
                     className="grid size-9 shrink-0 place-items-center rounded-full bg-[#1D79F2] text-white shadow-[0_10px_28px_rgba(29,121,242,0.35)] transition hover:scale-105 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
                     aria-label="Send message"
                     title="Send"
@@ -192,7 +309,7 @@ export function FluidChatComposer({
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-2 pl-7">
+                <div className="flex flex-wrap gap-2 pl-11">
                   <button
                     type="button"
                     className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200 bg-white/70 px-2.5 text-xs font-medium text-slate-600 transition hover:border-[#1D79F2]/50 hover:text-[#1D79F2]"
@@ -200,12 +317,13 @@ export function FluidChatComposer({
                     <Sparkles className="size-3.5" />
                     <span>Deep research</span>
                   </button>
+                  {fileError ? <span className="self-center text-xs text-amber-600">{fileError}</span> : null}
                 </div>
               </motion.div>
             ) : (
               <motion.div
                 key="drop"
-                className="absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_50%_18%,rgba(255,255,255,0.95),rgba(29,121,242,0.28)_55%,rgba(29,121,242,0.48))]"
+                className="absolute inset-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(29,121,242,0.44))]"
                 initial={{ opacity: 0.9 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}

@@ -69,10 +69,7 @@ input {
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.62)),
-    radial-gradient(circle at 25% 10%, rgba(29, 121, 242, 0.18), transparent 34%),
-    radial-gradient(circle at 80% 90%, rgba(21, 214, 161, 0.14), transparent 28%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.72));
   content: "";
 }
 

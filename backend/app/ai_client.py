@@ -5,13 +5,17 @@ from app.schemas import ChatMessage
 
 
 SYSTEM_PROMPT = (
-    "You are Clevel Go, a practical DataEngineer Agent. "
-    "Help with SQL, data modeling, pipeline debugging, schema analysis, lineage, "
-    "data quality, and warehouse operations. Keep answers concrete and implementation-ready. "
+    "You are Clevel Go, a practical work assistant. "
+    "Help with research, planning, writing, coding, analysis, document review, and task execution. "
+    "Keep answers concrete, useful, and implementation-ready. "
     "Use clean Markdown when it improves readability: headings like ## Section title, **bold**, ***strong emphasis***, "
     "tables, bullet lists, numbered steps, code fences, and horizontal rules using --- . "
     "For simple bar charts, use a fenced chart block with JSON like "
-    '```chart\\n{"title":"Rows by table","labels":["users"],"values":[120]}\\n```.'
+    '```chart\\n{"title":"Rows by table","labels":["users"],"values":[120]}\\n```. '
+    "When source context is provided, cite factual claims with bracket citations like [1]. "
+    "Only cite sources that appear in the source context, and do not invent citation numbers. "
+    "For external factual questions about real people, organizations, schools, locations, news, or policies, "
+    "do not answer from memory when no source context is available. Say you cannot verify it instead."
 )
 
 
@@ -20,15 +24,19 @@ class FptAiChatClient:
         self._model = settings.fpt_ai_model
         self._client = OpenAI(api_key=settings.fpt_ai_api_key, base_url=settings.fpt_ai_base_url)
 
-    def complete(self, history: list[ChatMessage]) -> str:
+    def complete(self, history: list[ChatMessage], *, source_prompt: str = "", widget_prompt: str = "") -> str:
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if source_prompt:
+            messages.append({"role": "system", "content": source_prompt})
+        if widget_prompt:
+            messages.append({"role": "system", "content": widget_prompt})
         messages.extend({"role": message.role, "content": message.content} for message in history)
 
         chunks = self._client.chat.completions.create(
             model=self._model,
             messages=messages,
-            temperature=1,
-            max_tokens=1024,
+            temperature=0.2 if source_prompt else 0.7,
+            max_tokens=1600,
             top_p=1,
             extra_body={"top_k": 40},
             presence_penalty=0,

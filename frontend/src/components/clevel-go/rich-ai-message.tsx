@@ -4,7 +4,16 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type RichAiMessageProps = {
   content: string;
+  citations?: CitationSource[];
   typewriter?: boolean;
+};
+
+type CitationSource = {
+  id: number;
+  title: string;
+  url?: string | null;
+  snippet: string;
+  sourceType: "web" | "url" | "file";
 };
 
 type ChartData = {
@@ -13,7 +22,7 @@ type ChartData = {
   values: number[];
 };
 
-export function RichAiMessage({ content, typewriter = false }: RichAiMessageProps) {
+export function RichAiMessage({ content, citations = [], typewriter = false }: RichAiMessageProps) {
   const normalizedContent = useMemo(() => normalizeMarkdownContent(content), [content]);
   const tokens = useMemo(() => normalizedContent.match(/\s+|\S+/g) ?? [], [normalizedContent]);
   const totalWords = useMemo(() => tokens.filter((token) => /\S/.test(token)).length, [tokens]);
@@ -42,7 +51,7 @@ export function RichAiMessage({ content, typewriter = false }: RichAiMessageProp
 
   return (
     <div className="rich-ai-message">
-      <MarkdownBlocks content={visibleContent} />
+      <MarkdownBlocks content={visibleContent} citations={citations} />
       {typewriter && visibleWords < totalWords ? (
         <span className="ml-0.5 inline-block h-[1em] w-px translate-y-0.5 animate-caret bg-[#1D79F2]" />
       ) : null}
@@ -77,7 +86,7 @@ function normalizeMarkdownContent(content: string) {
     .replace(/```([a-zA-Z]+)\n\n/g, "```$1\n");
 }
 
-function MarkdownBlocks({ content }: { content: string }) {
+function MarkdownBlocks({ content, citations }: { content: string; citations: CitationSource[] }) {
   const blocks = parseBlocks(content);
 
   return (
@@ -99,7 +108,7 @@ function MarkdownBlocks({ content }: { content: string }) {
 
           return (
             <div key={index} className={headingClass}>
-              {renderInline(block.content)}
+              {renderInline(block.content, citations)}
             </div>
           );
         }
@@ -121,14 +130,14 @@ function MarkdownBlocks({ content }: { content: string }) {
         }
 
         if (block.type === "table") {
-          return <TableBlock key={index} rows={block.rows} />;
+          return <TableBlock key={index} rows={block.rows} citations={citations} />;
         }
 
         if (block.type === "list") {
           return (
             <ul key={index} className="list-disc space-y-1 pl-5">
               {block.items.map((item, itemIndex) => (
-                <li key={itemIndex}>{renderInline(item)}</li>
+                <li key={itemIndex}>{renderInline(item, citations)}</li>
               ))}
             </ul>
           );
@@ -138,7 +147,7 @@ function MarkdownBlocks({ content }: { content: string }) {
           return (
             <ol key={index} className="list-decimal space-y-1 pl-5">
               {block.items.map((item, itemIndex) => (
-                <li key={itemIndex}>{renderInline(item)}</li>
+                <li key={itemIndex}>{renderInline(item, citations)}</li>
               ))}
             </ol>
           );
@@ -147,14 +156,14 @@ function MarkdownBlocks({ content }: { content: string }) {
         if (block.type === "quote") {
           return (
             <blockquote key={index} className="border-l-2 border-[#1D79F2]/50 pl-3 text-slate-600">
-              {renderInline(block.content)}
+              {renderInline(block.content, citations)}
             </blockquote>
           );
         }
 
         return (
           <p key={index} className="leading-6">
-            {renderInline(block.content)}
+            {renderInline(block.content, citations)}
           </p>
         );
       })}
@@ -285,7 +294,7 @@ function parseTable(lines: string[]) {
     );
 }
 
-function TableBlock({ rows }: { rows: string[][] }) {
+function TableBlock({ rows, citations }: { rows: string[][]; citations: CitationSource[] }) {
   const [head, ...body] = rows;
 
   if (!head) {
@@ -299,7 +308,7 @@ function TableBlock({ rows }: { rows: string[][] }) {
           <tr>
             {head.map((cell, index) => (
               <th key={index} className="border-b border-slate-200 px-3 py-2 font-semibold">
-                {renderInline(cell)}
+                {renderInline(cell, citations)}
               </th>
             ))}
           </tr>
@@ -309,7 +318,7 @@ function TableBlock({ rows }: { rows: string[][] }) {
             <tr key={rowIndex} className="odd:bg-white even:bg-slate-50/70">
               {row.map((cell, cellIndex) => (
                 <td key={cellIndex} className="border-b border-slate-100 px-3 py-2 align-top">
-                  {renderInline(cell)}
+                  {renderInline(cell, citations)}
                 </td>
               ))}
             </tr>
@@ -387,9 +396,9 @@ function parseChart(source: string): ChartData | null {
   return null;
 }
 
-function renderInline(text: string): ReactNode[] {
+function renderInline(text: string, citations: CitationSource[] = []): ReactNode[] {
   const parts: ReactNode[] = [];
-  const pattern = /(`[^`]+`|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  const pattern = /(\[[^\]]+\]\(https?:\/\/[^)]+\)|\[\d+\]|`[^`]+`|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -419,6 +428,46 @@ function renderInline(text: string): ReactNode[] {
           {token.slice(2, -2)}
         </strong>,
       );
+    } else if (token.match(/^\[[^\]]+\]\(https?:\/\/[^)]+\)$/)) {
+      const linkMatch = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+      parts.push(
+        <a
+          key={key}
+          href={linkMatch?.[2]}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-[#1D79F2] underline decoration-[#1D79F2]/30 underline-offset-2"
+        >
+          {linkMatch?.[1]}
+        </a>,
+      );
+    } else if (token.match(/^\[\d+\]$/)) {
+      const citationId = Number(token.slice(1, -1));
+      const citation = citations.find((source) => source.id === citationId);
+      if (citation?.url) {
+        parts.push(
+          <a
+            key={key}
+            href={citation.url}
+            target="_blank"
+            rel="noreferrer"
+            title={citation.title}
+            className="mx-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-[#1D79F2]/10 px-1.5 text-[0.78em] font-semibold leading-5 text-[#1D79F2] no-underline"
+          >
+            {citationId}
+          </a>,
+        );
+      } else {
+        parts.push(
+          <span
+            key={key}
+            title={citation?.title}
+            className="mx-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-slate-100 px-1.5 text-[0.78em] font-semibold leading-5 text-slate-600"
+          >
+            {citationId}
+          </span>,
+        );
+      }
     } else {
       parts.push(<em key={key}>{token.slice(1, -1)}</em>);
     }

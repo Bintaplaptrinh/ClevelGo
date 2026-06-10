@@ -6,7 +6,7 @@ from pymongo import DESCENDING, MongoClient
 from pymongo.collection import Collection
 
 from app.config import Settings
-from app.schemas import ChatMessage, ConversationSummary, MessageRole
+from app.schemas import AttachmentSummary, ChatMessage, ChatWidget, CitationSource, ConversationSummary, MessageRole
 
 
 class ChatHistoryRepository:
@@ -74,7 +74,16 @@ class ChatHistoryRepository:
 
         return conversation
 
-    def add_message(self, conversation_id: str, role: MessageRole, content: str) -> ChatMessage:
+    def add_message(
+        self,
+        conversation_id: str,
+        role: MessageRole,
+        content: str,
+        *,
+        citations: list[CitationSource] | None = None,
+        widgets: list[ChatWidget] | None = None,
+        attachments: list[AttachmentSummary] | None = None,
+    ) -> ChatMessage:
         now = datetime.now(UTC)
         message = {
             "id": str(uuid4()),
@@ -82,6 +91,9 @@ class ChatHistoryRepository:
             "content": content,
             "created_at": now,
             "status": "completed",
+            "citations": [citation.model_dump(by_alias=True) for citation in citations or []],
+            "widgets": [widget.model_dump(by_alias=True) for widget in widgets or []],
+            "attachments": [attachment.model_dump(by_alias=True) for attachment in attachments or []],
         }
         self.ensure_conversation(conversation_id, content)
         self._conversations.update_one(
@@ -127,6 +139,10 @@ class ChatHistoryRepository:
 
         return conversation
 
+    def delete_conversation(self, conversation_id: str) -> bool:
+        result = self._conversations.delete_one({"_id": conversation_id})
+        return result.deleted_count > 0
+
     def list_conversations(self, limit: int = 100) -> list[ConversationSummary]:
         cursor = (
             self._conversations.find({"archived": {"$ne": True}})
@@ -163,6 +179,9 @@ class ChatHistoryRepository:
             content=message["content"],
             created_at=message["created_at"],
             status=message.get("status", "completed"),
+            citations=[CitationSource.model_validate(item) for item in message.get("citations", [])],
+            widgets=[ChatWidget.model_validate(item) for item in message.get("widgets", [])],
+            attachments=[AttachmentSummary.model_validate(item) for item in message.get("attachments", [])],
         )
 
     def _to_conversation(self, document: dict[str, Any]) -> ConversationSummary:

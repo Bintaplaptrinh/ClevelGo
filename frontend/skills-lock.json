@@ -1,71 +1,125 @@
 {
   "version": 1,
   "skills": {
-    "firebase-ai-logic-basics": {
-      "source": "firebase/agent-skills",
+    "academic-researcher": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-ai-logic-basics/SKILL.md",
-      "computedHash": "65aaefb79a4d018bb24b1904be4b9a460b189b78f26145741af83ad7c38f7669"
+      "skillPath": "skills/academic-researcher/SKILL.md",
+      "computedHash": "93334b34a735942fcfd66a4ddb02df13eea639864c579b47b356c9ad5d67d4d3"
     },
-    "firebase-app-hosting-basics": {
-      "source": "firebase/agent-skills",
+    "code-reviewer": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-app-hosting-basics/SKILL.md",
-      "computedHash": "a3ba088442abf5b97281bcf3e4dd11e1f7bdefdc5bd404b4fb30f344d19742d2"
+      "skillPath": "skills/code-reviewer/SKILL.md",
+      "computedHash": "332f27da42ce6f25d71652f0bfe9a38fd31f45b63ac3f79570c0fb10ab30ef68"
     },
-    "firebase-auth-basics": {
-      "source": "firebase/agent-skills",
+    "content-creator": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-auth-basics/SKILL.md",
-      "computedHash": "87ffefcaa1934070f3f91977588ec82fde38a75cbc41919df6fe0a0c83acc90d"
+      "skillPath": "skills/content-creator/SKILL.md",
+      "computedHash": "38aa9012dab03d833cbbadba160d7dcddbe56266b0badfddf0b7048a40061a69"
     },
-    "firebase-basics": {
-      "source": "firebase/agent-skills",
+    "data-analyst": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-basics/SKILL.md",
-      "computedHash": "610305ba0d7fcb956001a2a96eea7902b63ae7367214aeee7ab0d93e0b6e8369"
+      "skillPath": "skills/data-analyst/SKILL.md",
+      "computedHash": "144e82457e8861ae540138f9d0168e1eb7c56761bc8db541733d448cb7cb3e1e"
     },
-    "firebase-crashlytics": {
-      "source": "firebase/agent-skills",
+    "debugger": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-crashlytics/SKILL.md",
-      "computedHash": "e40f0b599853b0512d023306b23bfbcc39c911ff61d5f0f084cab2bce234480a"
+      "skillPath": "skills/debugger/SKILL.md",
+      "computedHash": "85b6e69ec7aa7bb06455b41a18c4429e9970cd5ae36bfec1049da1196ba38544"
     },
-    "firebase-data-connect": {
-      "source": "firebase/agent-skills",
+    "decision-helper": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-data-connect-basics/SKILL.md",
-      "computedHash": "506bd68146e316f296df2dd02d90aa90542584b6b131f4003447d7716155dcdd"
+      "skillPath": "skills/decision-helper/SKILL.md",
+      "computedHash": "6f5dacc01c75297d76f2e385cf7a86658cbf52982130332cf92d69a98d0875c2"
     },
-    "firebase-firestore": {
-      "source": "firebase/agent-skills",
+    "deep-research": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-firestore/SKILL.md",
-      "computedHash": "b2257a15aabfe310176f4e94ffec377b32bdc2e8465d65d219542c4c4c896a39"
+      "skillPath": "skills/deep-research/SKILL.md",
+      "computedHash": "5637feab59dcc091d307fb0881907d9dfae74d3eccdf51b9bc8acf879c28c682"
     },
-    "firebase-hosting-basics": {
-      "source": "firebase/agent-skills",
+    "editor": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-hosting-basics/SKILL.md",
-      "computedHash": "0688a8ad6cb72149924352cc47e6cc8bf815e944b636a67b9da225cc9b025afc"
+      "skillPath": "skills/editor/SKILL.md",
+      "computedHash": "0427e5e04d6c9f2c86f6a28dc10142dec9343da9c68e7463e9ecb87a01da3373"
     },
-    "firebase-remote-config-basics": {
-      "source": "firebase/agent-skills",
+    "email-drafter": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-remote-config-basics/SKILL.md",
-      "computedHash": "ac2bfdc0f4e2fba123e2baf22a39ff80073c9f682784a67d0ac625118bad1921"
+      "skillPath": "skills/email-drafter/SKILL.md",
+      "computedHash": "df135e30264fae1975127746a1fe82d0f8d966eba2ee07ee8c9c4f831b6ceb8b"
     },
-    "firebase-security-rules-auditor": {
-      "source": "firebase/agent-skills",
+    "fact-checker": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/firebase-security-rules-auditor/SKILL.md",
-      "computedHash": "42e793406ca8980c47fcdbd309f02838316849bcbf8475001b4ecaa6a67606b8"
+      "skillPath": "skills/fact-checker/SKILL.md",
+      "computedHash": "2a93fc43762d7f626379287f9c4aab02c4a4a6d1d04ca63f9444e6932ca0dade"
     },
-    "xcode-project-setup": {
-      "source": "firebase/agent-skills",
+    "fullstack-developer": {
+      "source": "shubhamsaboo/awesome-agent-skills",
       "sourceType": "github",
-      "skillPath": "skills/xcode-project-setup/SKILL.md",
-      "computedHash": "c212c4e08f0d2bbd4a2a61278a9a030e3da1227c0fe57022ed54d1c3c1a0aaf8"
+      "skillPath": "skills/fullstack-developer/SKILL.md",
+      "computedHash": "53077f62532d9b995d7b1d3aa729b6487ef05a33e377e8d1bb8f319fcf670c2a"
+    },
+    "meeting-notes": {
+      "source": "shubhamsaboo/awesome-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/meeting-notes/SKILL.md",
+      "computedHash": "3132217ddf2e86cf585c78f18c22582b4559647bb4785ef525df745f91e69976"
+    },
+    "project-planner": {
+      "source": "shubhamsaboo/awesome-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/project-planner/SKILL.md",
+      "computedHash": "ea1efbc2797ce4b9d5c60d7a31f72c7106b503f2b2e16910bde3ca5c35abb530"
+    },
+    "python-expert": {
+      "source": "shubhamsaboo/awesome-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/python-expert/SKILL.md",
+      "computedHash": "59188a73d9183f3fb6b2a8bd3e53e388609af9fe740f6a35b545a2c828d95eb6"
+    },
+    "search-and-fetch": {
+      "source": "local",
+      "sourceType": "local",
+      "skillPath": "skills/search-and-fetch/SKILL.md",
+      "computedHash": "dad5d41e62f41c1b7a0a858cefe23ef7e16f7be6d3dd9d5d7eeb1dbe94e4ed7c"
+    },
+    "sprint-planner": {
+      "source": "shubhamsaboo/awesome-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/sprint-planner/SKILL.md",
+      "computedHash": "93db11ad6b720228fb4b64e3c91a1fce4ef94f5c6124061f071be72f23939847"
+    },
+    "strategy-advisor": {
+      "source": "shubhamsaboo/awesome-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/strategy-advisor/SKILL.md",
+      "computedHash": "48d8dc10c1dabd0f0961590f426574cd91d40102c34dd83098f96a4edc66d9c2"
+    },
+    "technical-writer": {
+      "source": "shubhamsaboo/awesome-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/technical-writer/SKILL.md",
+      "computedHash": "485d1afc2a672ea692ee301882b5e89806c9a5cee3deab55cf57c6682bd662e1"
+    },
+    "ux-designer": {
+      "source": "shubhamsaboo/awesome-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/ux-designer/SKILL.md",
+      "computedHash": "26bea3bb64f08a3e60d9dfe1d06ab8529e25e862270ad5e0a39b8a5429eda162"
+    },
+    "visualization-expert": {
+      "source": "shubhamsaboo/awesome-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/visualization-expert/SKILL.md",
+      "computedHash": "7cf80d5352cd2df5b80e8be04379086456c7bc23700bd3456639de03a1625b0b"
     }
   }
 }
