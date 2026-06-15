@@ -14,6 +14,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=12000)
     conversation_id: str | None = Field(default=None, alias="conversationId")
     client_timezone: str | None = Field(default=None, alias="clientTimezone")
+    model: str | None = Field(default=None, alias="model")
 
 
 class CitationSource(BaseModel):
@@ -99,3 +100,24 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     model: str
     mongodb: Literal["ok", "error"]
+
+
+class ModelInfo(BaseModel):
+    id: str
+    label: str
+    provider: str
+
+
+class ModelListResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    models: list[ModelInfo]
+    default_model: str = Field(alias="defaultModel")
+
+
+class WarmupResponse(BaseModel):
+    status: Literal["ok"]
+    server: Literal["ok"]
+    ai: Literal["ok", "error"]
+    mongodb: Literal["ok", "error"]
+    model: str

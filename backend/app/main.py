@@ -5,8 +5,8 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.ai_client import FptAiChatClient
-from app.config import Settings, get_settings
+from app.ai_client import MultiProviderChatClient
+from app.config import MODEL_CATALOG, Settings, get_settings
 from app.context_builder import prepare_context
 from app.history import ChatHistoryRepository
 from app.schemas import (
@@ -15,6 +15,9 @@ from app.schemas import (
     ConversationHistoryResponse,
     ConversationListResponse,
     HealthResponse,
+    ModelInfo,
+    ModelListResponse,
+    WarmupResponse,
 )
 
 
@@ -22,7 +25,7 @@ from app.schemas import (
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.history = ChatHistoryRepository(settings)
-    app.state.ai_client = FptAiChatClient(settings)
+    app.state.ai_client = MultiProviderChatClient(settings)
     yield
 
 
@@ -42,7 +45,7 @@ def get_history() -> ChatHistoryRepository:
     return app.state.history
 
 
-def get_ai_client() -> FptAiChatClient:
+def get_ai_client() -> MultiProviderChatClient:
     return app.state.ai_client
 
 
@@ -60,11 +63,57 @@ def health(
     return HealthResponse(status="ok", model=config.fpt_ai_model, mongodb=mongodb_status)
 
 
+@app.get("/api/models", response_model=ModelListResponse)
+def models(config: Annotated[Settings, Depends(get_settings)]) -> ModelListResponse:
+    return ModelListResponse(
+        models=[
+            ModelInfo(id=option.id, label=option.label, provider=option.provider)
+            for option in MODEL_CATALOG
+        ],
+        defaultModel=config.fpt_ai_model,
+    )
+
+
+@app.post("/api/warmup", response_model=WarmupResponse)
+@app.get("/api/warmup", response_model=WarmupResponse)
+def warmup(
+    config: Annotated[Settings, Depends(get_settings)],
+    history: Annotated[ChatHistoryRepository, Depends(get_history)],
+    ai_client: Annotated[MultiProviderChatClient, Depends(get_ai_client)],
+    model: str | None = None,
+) -> WarmupResponse:
+    """Pre-warm the server, database connection, and the AI provider.
+
+    Useful when the backend sleeps on idle (e.g. free hosting tiers): the
+    frontend can call this on load so the first real request is fast.
+    """
+
+    mongodb_status = "ok"
+    try:
+        history.ping()
+    except Exception:
+        mongodb_status = "error"
+
+    ai_status = "ok"
+    try:
+        ai_client.warm(model)
+    except Exception:
+        ai_status = "error"
+
+    return WarmupResponse(
+        status="ok",
+        server="ok",
+        ai=ai_status,
+        mongodb=mongodb_status,
+        model=model or config.fpt_ai_model,
+    )
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(
     request: Request,
     history: Annotated[ChatHistoryRepository, Depends(get_history)],
-    ai_client: Annotated[FptAiChatClient, Depends(get_ai_client)],
+    ai_client: Annotated[MultiProviderChatClient, Depends(get_ai_client)],
 ) -> ChatResponse:
     payload, uploads = await parse_chat_payload(request)
     conversation_id = payload.conversation_id or str(uuid4())
@@ -109,6 +158,7 @@ async def chat(
     try:
         assistant_content = ai_client.complete(
             recent_messages,
+            model=payload.model,
             source_prompt=context.source_prompt,
             widget_prompt=context.widget_prompt,
         )
@@ -130,7 +180,7 @@ async def chat(
 
     if is_new_conversation:
         try:
-            title = ai_client.title_conversation(payload.message.strip(), assistant_content)
+            title = ai_client.title_conversation(payload.message.strip(), assistant_content, model=payload.model)
         except Exception:
             title = payload.message.strip()
         conversation = history.set_conversation_title(conversation_id, title)
@@ -156,12 +206,14 @@ async def parse_chat_payload(request: Request) -> tuple[ChatRequest, list[Upload
         message = str(form.get("message") or "").strip()
         conversation_id = form.get("conversationId") or form.get("conversation_id")
         client_timezone = form.get("clientTimezone") or form.get("client_timezone")
+        model = form.get("model")
         uploads = [item for item in form.getlist("files") if hasattr(item, "filename") and hasattr(item, "read")]
         try:
             payload = ChatRequest(
                 message=message,
                 conversationId=str(conversation_id) if conversation_id else None,
                 clientTimezone=str(client_timezone) if client_timezone else None,
+                model=str(model) if model else None,
             )
         except Exception as exc:
             raise HTTPException(status_code=422, detail="Invalid chat request") from exc

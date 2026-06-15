@@ -1,17 +1,27 @@
 "use client";
 
-import { ArrowUp, FileText, Loader2, Paperclip, Sparkles, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, FileText, Loader2, Paperclip, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
 type ComposerPhase = "idle" | "morph" | "fall" | "splat" | "bottom";
 
+export type ModelOption = {
+  id: string;
+  label: string;
+  provider: string;
+};
+
 type FluidChatComposerProps = {
   disabled?: boolean;
   forceDocked?: boolean;
   isThinking?: boolean;
+  models?: ModelOption[];
+  selectedModelId?: string | null;
+  onSelectModel?: (modelId: string) => void;
   onSubmit: (message: string, files: File[]) => void;
 };
 
@@ -26,6 +36,9 @@ export function FluidChatComposer({
   disabled,
   forceDocked = false,
   isThinking,
+  models = [],
+  selectedModelId = null,
+  onSelectModel,
   onSubmit,
 }: FluidChatComposerProps) {
   const [value, setValue] = useState("");
@@ -295,9 +308,17 @@ export function FluidChatComposer({
                     }}
                     disabled={disabled || isThinking}
                     rows={isDocked ? 1 : 3}
-                    placeholder="Ask Clevel Go to summarize a PDF, research a topic, plan work, or draft a response..."
+                    placeholder="Ask Clevel Go"
                     className="min-h-10 flex-1 resize-none bg-transparent text-[15px] leading-6 text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
                   />
+                  {models.length > 0 ? (
+                    <ModelPicker
+                      models={models}
+                      selectedModelId={selectedModelId}
+                      onSelectModel={onSelectModel}
+                      disabled={disabled || isThinking}
+                    />
+                  ) : null}
                   <button
                     type="submit"
                     disabled={!canSubmit}
@@ -332,6 +353,156 @@ export function FluidChatComposer({
           </AnimatePresence>
         </motion.form>
       </motion.div>
+    </div>
+  );
+}
+
+type ModelPickerProps = {
+  models: ModelOption[];
+  selectedModelId?: string | null;
+  onSelectModel?: (modelId: string) => void;
+  disabled?: boolean;
+};
+
+type MenuPlacement = {
+  left: number;
+  top?: number;
+  bottom?: number;
+  width: number;
+  direction: "down" | "up";
+};
+
+function ModelPicker({ models, selectedModelId, onSelectModel, disabled }: ModelPickerProps) {
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [placement, setPlacement] = useState<MenuPlacement>({ left: 0, top: 0, width: 208, direction: "down" });
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const selected = models.find((model) => model.id === selectedModelId) ?? models[0];
+
+  useEffect(() => setMounted(true), []);
+
+  const positionMenu = () => {
+    const button = buttonRef.current;
+    if (!button) {
+      return;
+    }
+
+    const rect = button.getBoundingClientRect();
+    const width = Math.max(rect.width, 208);
+    const estimatedHeight = Math.min(models.length * 40 + 8, 260);
+    const spaceBelow = window.innerHeight - rect.bottom;
+
+    // Default to dropping down; only flip up if there's no room (e.g. docked at the bottom).
+    if (spaceBelow < estimatedHeight + 16) {
+      setPlacement({ left: rect.left, bottom: window.innerHeight - rect.top + 8, width, direction: "up" });
+    } else {
+      setPlacement({ left: rect.left, top: rect.bottom + 8, width, direction: "down" });
+    }
+  };
+
+  const toggleOpen = () => {
+    if (!open) {
+      positionMenu();
+    }
+    setOpen((current) => !current);
+  };
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointer = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const reposition = () => positionMenu();
+
+    document.addEventListener("mousedown", handlePointer);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [open, models.length]);
+
+  const offscreenY = placement.direction === "down" ? -8 : 8;
+
+  const menu = (
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          ref={menuRef}
+          role="listbox"
+          initial={{ opacity: 0, scale: 0.94, y: offscreenY }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.94, y: offscreenY }}
+          transition={{ type: "spring", stiffness: 360, damping: 26, mass: 0.6 }}
+          style={{
+            position: "fixed",
+            left: placement.left,
+            top: placement.direction === "down" ? placement.top : undefined,
+            bottom: placement.direction === "up" ? placement.bottom : undefined,
+            width: placement.width,
+          }}
+          className={cn(
+            "z-[80] overflow-hidden rounded-xl border border-white/70 bg-white/95 py-1 shadow-[0_18px_52px_rgba(15,23,42,0.2)] backdrop-blur-2xl",
+            placement.direction === "down" ? "origin-top" : "origin-bottom",
+          )}
+        >
+          {models.map((model) => {
+            const isActive = model.id === selected?.id;
+            return (
+              <button
+                key={model.id}
+                type="button"
+                role="option"
+                aria-selected={isActive}
+                onClick={() => {
+                  onSelectModel?.(model.id);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition hover:bg-slate-50",
+                  isActive ? "text-[#1D79F2]" : "text-slate-700",
+                )}
+              >
+                <span className="truncate">{model.label}</span>
+                {isActive ? <Check className="size-4 shrink-0" /> : null}
+              </button>
+            );
+          })}
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+
+  return (
+    <div className="mt-0.5 shrink-0">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={toggleOpen}
+        disabled={disabled}
+        className="flex h-9 max-w-[150px] items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 text-xs font-medium text-slate-600 transition hover:border-[#1D79F2]/50 hover:text-[#1D79F2] disabled:cursor-not-allowed disabled:opacity-50"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title="Choose model"
+      >
+        <span className="truncate">{selected?.label ?? "Model"}</span>
+        <ChevronDown className={cn("size-3.5 shrink-0 transition", open ? "rotate-180" : "")} />
+      </button>
+
+      {mounted ? createPortal(menu, document.body) : null}
     </div>
   );
 }

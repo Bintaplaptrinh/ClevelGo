@@ -1,5 +1,7 @@
 "use client";
 
+import { Brain, Check, Copy } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type RichAiMessageProps = {
@@ -23,7 +25,8 @@ type ChartData = {
 };
 
 export function RichAiMessage({ content, citations = [], typewriter = false }: RichAiMessageProps) {
-  const normalizedContent = useMemo(() => normalizeMarkdownContent(content), [content]);
+  const { thinking, answer } = useMemo(() => splitThinking(content), [content]);
+  const normalizedContent = useMemo(() => normalizeMarkdownContent(answer), [answer]);
   const tokens = useMemo(() => normalizedContent.match(/\s+|\S+/g) ?? [], [normalizedContent]);
   const totalWords = useMemo(() => tokens.filter((token) => /\S/.test(token)).length, [tokens]);
   const [visibleWords, setVisibleWords] = useState(typewriter ? 0 : totalWords);
@@ -47,16 +50,64 @@ export function RichAiMessage({ content, citations = [], typewriter = false }: R
     return () => window.clearInterval(interval);
   }, [typewriter, totalWords]);
 
+  const isStreaming = typewriter && visibleWords < totalWords;
   const visibleContent = typewriter ? revealWords(tokens, visibleWords) : normalizedContent;
+
+  // Show the one-line thinking effect only while the answer is still revealing.
+  // Once the response is fully shown, it disappears.
+  const showThinking = Boolean(thinking) && typewriter && isStreaming;
 
   return (
     <div className="rich-ai-message">
+      <ThinkingLine active={showThinking} />
       <MarkdownBlocks content={visibleContent} citations={citations} />
-      {typewriter && visibleWords < totalWords ? (
+      {isStreaming ? (
         <span className="ml-0.5 inline-block h-[1em] w-px translate-y-0.5 animate-caret bg-[#1D79F2]" />
       ) : null}
     </div>
   );
+}
+
+function ThinkingLine({ active }: { active: boolean }) {
+  return (
+    <AnimatePresence initial={false}>
+      {active ? (
+        <motion.div
+          key="thinking-line"
+          initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+          animate={{ opacity: 1, height: "auto", marginBottom: 8 }}
+          exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+          transition={{ duration: 0.28, ease: "easeInOut" }}
+          className="flex items-center gap-2 overflow-hidden text-xs font-medium"
+        >
+          <Brain className="size-3.5 shrink-0 animate-pulse text-[#1D79F2]" />
+          <span className="thinking-text">Thinking</span>
+          <span className="thinking-text inline-flex w-4 justify-start [animation-delay:0.4s]">…</span>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+// Separates an optional <think>...</think> reasoning block from the answer body
+// so reasoning never leaks into the rendered message.
+function splitThinking(content: string): { thinking: string; answer: string } {
+  const text = content ?? "";
+
+  const closed = /<think>([\s\S]*?)<\/think>/i.exec(text);
+  if (closed) {
+    const before = text.slice(0, closed.index);
+    const after = text.slice(closed.index + closed[0].length);
+    return { thinking: closed[1].trim(), answer: `${before}${after}`.trim() };
+  }
+
+  // Unclosed block (e.g. still streaming): treat everything after <think> as reasoning.
+  const open = /<think>([\s\S]*)$/i.exec(text);
+  if (open) {
+    return { thinking: open[1].trim(), answer: text.slice(0, open.index).trim() };
+  }
+
+  return { thinking: "", answer: text };
 }
 
 function revealWords(tokens: string[], visibleWords: number) {
@@ -122,11 +173,7 @@ function MarkdownBlocks({ content, citations }: { content: string; citations: Ci
             return <MermaidCodeBlock key={index} source={block.content} />;
           }
 
-          return (
-            <pre key={index} className="overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs leading-5 text-slate-50">
-              <code>{block.content}</code>
-            </pre>
-          );
+          return <CodeBlock key={index} code={block.content} language={block.language} />;
         }
 
         if (block.type === "table") {
@@ -361,6 +408,69 @@ function ChartBlock({ source }: { source: string }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function CodeBlock({ code, language }: { code: string; language: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = code;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!copied) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setCopied(false), 1600);
+    return () => window.clearTimeout(timeout);
+  }, [copied]);
+
+  return (
+    <div className="group/code relative overflow-hidden rounded-lg bg-slate-950">
+      <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{language || "code"}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+          aria-label={copied ? "Copied" : "Copy code"}
+          title={copied ? "Copied" : "Copy code"}
+        >
+          {copied ? (
+            <>
+              <Check className="size-3.5 text-emerald-400" />
+              <span className="text-emerald-400">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="size-3.5" />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-3 text-xs leading-5 text-slate-50">
+        <code>{code}</code>
+      </pre>
     </div>
   );
 }

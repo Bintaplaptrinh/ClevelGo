@@ -13,14 +13,16 @@ import {
   Library,
   Link as LinkIcon,
   MessageSquare,
+  MoreVertical,
   PanelLeft,
   Plus,
   Search,
   Settings2,
   Sparkles,
+  Trash2,
   Wind,
 } from "lucide-react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FluidChatComposer } from "@/components/clevel-go/fluid-chat-composer";
@@ -92,11 +94,18 @@ type ConversationSummary = {
   archived: boolean;
 };
 
+type ModelOption = {
+  id: string;
+  label: string;
+  provider: string;
+};
+
 type AgentRequest = {
   message: string;
   conversationId: string;
   files?: File[];
   clientTimezone?: string;
+  model?: string | null;
 };
 
 type AgentResponse = {
@@ -114,8 +123,17 @@ type ChatShellProps = {
 };
 
 const conversationStorageKey = "clevel-go-conversation-id";
+const modelStorageKey = "clevel-go-model-id";
 
 const starterMessages: Message[] = [];
+
+// Mirrors the backend catalog so the picker works before /api/models resolves.
+const fallbackModels: ModelOption[] = [
+  { id: "gemma-4-31B-it", label: "Gemma 4", provider: "fpt" },
+  { id: "gpt-oss-120b", label: "GPT OSS", provider: "fpt" },
+  { id: "DeepSeek-V4-Flash", label: "DeepSeek V4 Flash", provider: "fpt" },
+  { id: "MiniMax-M3", label: "MiniMax M3", provider: "tokenrouter" },
+];
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -148,19 +166,20 @@ async function requestAgentResponse({
   conversationId,
   files = [],
   clientTimezone = getClientTimezone(),
+  model = null,
 }: AgentRequest): Promise<AgentResponse> {
   const requestInit: RequestInit =
     files.length > 0
       ? {
           method: "POST",
-          body: buildChatFormData(message, conversationId, files, clientTimezone),
+          body: buildChatFormData(message, conversationId, files, clientTimezone, model),
         }
       : {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ message, conversationId, clientTimezone }),
+          body: JSON.stringify({ message, conversationId, clientTimezone, model }),
         };
 
   const response = await fetch(`${apiBaseUrl}/api/chat`, requestInit);
@@ -187,15 +206,62 @@ function getClientTimezone() {
   }
 }
 
-function buildChatFormData(message: string, conversationId: string, files: File[], clientTimezone?: string) {
+function buildChatFormData(
+  message: string,
+  conversationId: string,
+  files: File[],
+  clientTimezone?: string,
+  model?: string | null,
+) {
   const formData = new FormData();
   formData.set("message", message);
   formData.set("conversationId", conversationId);
   if (clientTimezone) {
     formData.set("clientTimezone", clientTimezone);
   }
+  if (model) {
+    formData.set("model", model);
+  }
   files.forEach((file) => formData.append("files", file));
   return formData;
+}
+
+async function requestModels(): Promise<{ models: ModelOption[]; defaultModel: string } | null> {
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/models`);
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as { models: ModelOption[]; defaultModel: string };
+  } catch {
+    return null;
+  }
+}
+
+async function requestWarmup(model?: string | null) {
+  // Fire-and-forget pre-warm for the server, database, and AI provider.
+  try {
+    const query = model ? `?model=${encodeURIComponent(model)}` : "";
+    await fetch(`${apiBaseUrl}/api/warmup${query}`, { method: "POST" });
+  } catch {
+    // Warmup is best-effort; ignore failures.
+  }
+}
+
+function safeGetModelId() {
+  try {
+    return window.localStorage.getItem(modelStorageKey);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetModelId(modelId: string) {
+  try {
+    window.localStorage.setItem(modelStorageKey, modelId);
+  } catch {
+    // Storage may be unavailable; the in-memory state still drives the picker.
+  }
 }
 
 async function requestConversations(): Promise<ConversationSummary[]> {
@@ -258,6 +324,9 @@ export function ChatShell({ onAgentRequest = requestAgentResponse }: ChatShellPr
   const [isThinking, setIsThinking] = useState(false);
   const [search, setSearch] = useState("");
   const [showSettingsPopup, setShowSettingsPopup] = useState(false);
+  const [models, setModels] = useState<ModelOption[]>(fallbackModels);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [isWarming, setIsWarming] = useState(true);
   const conversationIdRef = useRef<string | null>(null);
   const chatScrollRef = useRef<HTMLElement | null>(null);
 
@@ -359,6 +428,35 @@ export function ChatShell({ onAgentRequest = requestAgentResponse }: ChatShellPr
     void loadInitialState();
   }, []);
 
+  useEffect(() => {
+    const loadModelsAndWarm = async () => {
+      const storedModelId = safeGetModelId();
+      const catalog = await requestModels();
+
+      const availableModels = catalog?.models?.length ? catalog.models : fallbackModels;
+      setModels(availableModels);
+
+      const storedIsValid = storedModelId && availableModels.some((model) => model.id === storedModelId);
+      const initialModelId =
+        (storedIsValid ? storedModelId : null) ?? catalog?.defaultModel ?? availableModels[0]?.id ?? null;
+      setSelectedModelId(initialModelId);
+
+      // Pre-warm the server, database, and AI provider for the selected model.
+      setIsWarming(true);
+      await requestWarmup(initialModelId);
+      setIsWarming(false);
+    };
+
+    void loadModelsAndWarm();
+  }, []);
+
+  const handleSelectModel = (modelId: string) => {
+    setSelectedModelId(modelId);
+    safeSetModelId(modelId);
+    // Warm the newly selected provider so the next message is fast.
+    void requestWarmup(modelId);
+  };
+
   const startNewConversation = () => {
     const nextConversationId = crypto.randomUUID();
 
@@ -431,6 +529,7 @@ export function ChatShell({ onAgentRequest = requestAgentResponse }: ChatShellPr
         conversationId: activeConversationId,
         files,
         clientTimezone: getClientTimezone(),
+        model: selectedModelId,
       });
       conversationIdRef.current = response.conversationId;
       safeSetConversationId(response.conversationId);
@@ -635,17 +734,9 @@ export function ChatShell({ onAgentRequest = requestAgentResponse }: ChatShellPr
                   </motion.article>
                 ))}
 
-                {isThinking ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center gap-2 text-sm text-slate-400"
-                  >
-                    <span className="grid size-7 place-items-center rounded-full border border-[#1D79F2]/20 bg-white text-[#1D79F2]">
-                      <Sparkles className="size-3.5 animate-pulse" />
-                    </span>
-                    Thinking through the request
-                  </motion.div>
+                {isThinking ? <AssistantSkeleton label="Thinking through the request" /> : null}
+                {isWarming && !isThinking && messages.length === 0 ? (
+                  <AssistantSkeleton label="Warming up the model" />
                 ) : null}
               </div>
             </div>
@@ -667,11 +758,39 @@ export function ChatShell({ onAgentRequest = requestAgentResponse }: ChatShellPr
             key={composerDocked ? "docked-composer" : "center-composer"}
             forceDocked={composerDocked}
             isThinking={isThinking}
+            models={models}
+            selectedModelId={selectedModelId}
+            onSelectModel={handleSelectModel}
             onSubmit={sendMessage}
           />
         </section>
       </div>
     </main>
+  );
+}
+
+function AssistantSkeleton({ label }: { label: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      className="flex justify-start"
+    >
+      <div className="w-full rounded-2xl border border-slate-100 bg-white/88 px-4 py-3 backdrop-blur-xl">
+        <div className="mb-3 flex items-center gap-2 text-xs font-medium">
+          <span className="grid size-6 place-items-center rounded-full border border-[#1D79F2]/20 bg-white text-[#1D79F2]">
+            <Sparkles className="size-3 animate-pulse" />
+          </span>
+          <span className="thinking-text">{label}</span>
+        </div>
+        <div className="space-y-2">
+          <div className="h-3 w-[92%] rounded-full skeleton-shimmer" />
+          <div className="h-3 w-[78%] rounded-full skeleton-shimmer" />
+          <div className="h-3 w-[60%] rounded-full skeleton-shimmer" />
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -687,9 +806,25 @@ function ConversationButton({
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const handlePointer = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointer);
+    return () => document.removeEventListener("mousedown", handlePointer);
+  }, [menuOpen]);
 
   return (
-    <div className="group relative">
+    <div ref={menuRef} className="group relative">
       <button
         type="button"
         onClick={() => {
@@ -713,30 +848,45 @@ function ConversationButton({
           event.stopPropagation();
           setMenuOpen((current) => !current);
         }}
-        className={`absolute right-1.5 top-1.5 z-10 grid size-6 place-items-center rounded-md text-sm font-semibold transition ${
-          menuOpen ? "bg-white text-slate-700 shadow-sm" : "text-slate-400 hover:bg-white hover:text-slate-700"
+        className={`absolute right-1.5 top-1.5 z-10 grid size-6 place-items-center rounded-md transition ${
+          menuOpen
+            ? "bg-white text-slate-700 shadow-sm"
+            : "text-slate-400 opacity-0 hover:bg-white hover:text-slate-700 focus-visible:opacity-100 group-hover:opacity-100"
         }`}
         aria-label="Conversation options"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
         title="Conversation options"
       >
-        :
+        <MoreVertical className="size-4" />
       </button>
 
-      {menuOpen ? (
-        <div className="absolute right-1.5 top-8 z-20 w-28 rounded-lg border border-white/70 bg-white/90 p-1 shadow-[0_16px_44px_rgba(15,23,42,0.16)] backdrop-blur-xl">
-          <button
-            type="button"
-            className="flex h-8 w-full items-center rounded-md px-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen(false);
-              onDelete();
-            }}
+      <AnimatePresence>
+        {menuOpen ? (
+          <motion.div
+            role="menu"
+            initial={{ opacity: 0, scale: 0.92, y: -6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: -6 }}
+            transition={{ type: "spring", stiffness: 380, damping: 26, mass: 0.6 }}
+            className="absolute right-1.5 top-8 z-30 w-32 origin-top-right overflow-hidden rounded-lg border border-white/70 bg-white/90 p-1 shadow-[0_16px_44px_rgba(15,23,42,0.16)] backdrop-blur-xl"
           >
-            Delete
-          </button>
-        </div>
-      ) : null}
+            <button
+              type="button"
+              role="menuitem"
+              className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                onDelete();
+              }}
+            >
+              <Trash2 className="size-3.5 shrink-0" />
+              Delete
+            </button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

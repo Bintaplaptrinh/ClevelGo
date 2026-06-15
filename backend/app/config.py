@@ -6,6 +6,43 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# Provider identifiers used to route a model to the right API client.
+PROVIDER_FPT = "fpt"
+PROVIDER_TOKENROUTER = "tokenrouter"
+
+
+class ModelOption:
+    """A selectable model exposed to the frontend.
+
+    ``label`` is the user-facing name shown in the picker (no provider),
+    ``id`` is the value sent to the provider API, ``provider`` selects the client.
+    """
+
+    def __init__(self, model_id: str, label: str, provider: str) -> None:
+        self.id = model_id
+        self.label = label
+        self.provider = provider
+
+
+# Single source of truth for the models the app supports.
+MODEL_CATALOG: list[ModelOption] = [
+    ModelOption("gemma-4-31B-it", "Gemma 4", PROVIDER_FPT),
+    ModelOption("gpt-oss-120b", "GPT OSS", PROVIDER_FPT),
+    ModelOption("DeepSeek-V4-Flash", "DeepSeek V4 Flash", PROVIDER_FPT),
+    ModelOption("MiniMax-M3", "MiniMax M3", PROVIDER_TOKENROUTER),
+]
+
+MODELS_BY_ID: dict[str, ModelOption] = {option.id: option for option in MODEL_CATALOG}
+
+
+def resolve_model(model_id: str | None, default_model_id: str) -> ModelOption:
+    """Return the catalog entry for ``model_id`` or fall back to the default."""
+
+    if model_id and model_id in MODELS_BY_ID:
+        return MODELS_BY_ID[model_id]
+    return MODELS_BY_ID.get(default_model_id, MODEL_CATALOG[0])
+
+
 class Settings(BaseSettings):
     default_cors_origins: ClassVar[str] = (
         "http://localhost:3000,"
@@ -16,6 +53,9 @@ class Settings(BaseSettings):
     fpt_ai_api_key: str = Field(alias="FPT_AI_API_KEY")
     fpt_ai_base_url: str = Field(default="https://mkp-api.fptcloud.com", alias="FPT_AI_BASE_URL")
     fpt_ai_model: str = Field(default="gpt-oss-120b", alias="FPT_AI_MODEL")
+    tokenrouter_api_key: str = Field(default="", alias="TOKENROUTER_API_KEY")
+    tokenrouter_base_url: str = Field(default="https://api.tokenrouter.com/v1", alias="TOKENROUTER_BASE_URL")
+    tokenrouter_model: str = Field(default="MiniMax-M3", alias="TOKENROUTER_MODEL")
     mongodb_uri: str = Field(alias="MONGODB_URI")
     mongodb_db_name: str = Field(default="clevel_go", alias="MONGODB_DB_NAME")
     mongodb_conversations_collection: str = Field(
