@@ -688,9 +688,11 @@ function parseChart(source: string): ChartData | null {
   return null;
 }
 
-function renderInline(text: string, citations: CitationSource[] = []): ReactNode[] {
+function renderInline(rawText: string, citations: CitationSource[] = []): ReactNode[] {
+  const text = autoWrapBareLatex(rawText);
   const parts: ReactNode[] = [];
-  const pattern = /(\$[^$\n]+\$|\[[^\]]+\]\(https?:\/\/[^)]+\)|\[\d+\]|`[^`]+`|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  const pattern =
+    /(\$\$[^$]+\$\$|\$[^$\n]+\$|\[[^\]]+\]\(https?:\/\/[^)]+\)|\[\d+\]|`[^`]+`|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -703,10 +705,18 @@ function renderInline(text: string, citations: CitationSource[] = []): ReactNode
     const key = `${match.index}-${token}`;
 
     if (token.startsWith("$")) {
+      const display = token.startsWith("$$");
+      const inner = display ? token.slice(2, -2) : token.slice(1, -1);
       parts.push(
-        <span key={key} className="inline-math">
-          {renderInlineMath(token.slice(1, -1))}
-        </span>,
+        display ? (
+          <span key={key} className="my-1 block overflow-x-auto text-center font-mono text-[0.95em]">
+            {renderMath(inner)}
+          </span>
+        ) : (
+          <span key={key} className="inline-math">
+            {renderMath(inner)}
+          </span>
+        ),
       );
     } else if (token.startsWith("`")) {
       parts.push(
@@ -780,42 +790,239 @@ function renderInline(text: string, citations: CitationSource[] = []): ReactNode
   return parts;
 }
 
-function renderInlineMath(source: string) {
-  const replacements: Record<string, string> = {
-    "\\alpha": "α",
-    "\\beta": "β",
-    "\\gamma": "γ",
-    "\\delta": "δ",
-    "\\epsilon": "ε",
-    "\\lambda": "λ",
-    "\\mu": "μ",
-    "\\pi": "π",
-    "\\sigma": "σ",
-    "\\theta": "θ",
-    "\\omega": "ω",
-    "\\rightarrow": "→",
-    "\\to": "→",
-    "\\leftarrow": "←",
-    "\\leftrightarrow": "↔",
-    "\\Rightarrow": "⇒",
-    "\\Leftarrow": "⇐",
-    "\\Leftrightarrow": "⇔",
-    "\\uparrow": "↑",
-    "\\downarrow": "↓",
-    "\\times": "×",
-    "\\cdot": "·",
-    "\\div": "÷",
-    "\\pm": "±",
-    "\\le": "≤",
-    "\\leq": "≤",
-    "\\ge": "≥",
-    "\\geq": "≥",
-    "\\ne": "≠",
-    "\\neq": "≠",
-    "\\approx": "≈",
-    "\\equiv": "≡",
-    "\\infty": "∞",
+// Symbol commands (without the leading backslash) mapped to Unicode.
+const LATEX_SYMBOLS: Record<string, string> = {
+  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", varepsilon: "ε", zeta: "ζ",
+  eta: "η", theta: "θ", vartheta: "ϑ", iota: "ι", kappa: "κ", lambda: "λ", mu: "μ", nu: "ν",
+  xi: "ξ", omicron: "ο", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", upsilon: "υ", phi: "φ",
+  varphi: "φ", chi: "χ", psi: "ψ", omega: "ω",
+  Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π", Sigma: "Σ", Phi: "Φ",
+  Psi: "Ψ", Omega: "Ω",
+  sum: "∑", prod: "∏", coprod: "∐", int: "∫", iint: "∬", oint: "∮", partial: "∂", nabla: "∇",
+  infty: "∞", aleph: "ℵ",
+  times: "×", cdot: "·", div: "÷", ast: "∗", star: "⋆", circ: "∘", bullet: "•", pm: "±", mp: "∓",
+  oplus: "⊕", otimes: "⊗",
+  leq: "≤", le: "≤", geq: "≥", ge: "≥", neq: "≠", ne: "≠", approx: "≈", equiv: "≡", sim: "∼",
+  simeq: "≃", cong: "≅", propto: "∝", ll: "≪", gg: "≫", doteq: "≐",
+  rightarrow: "→", to: "→", longrightarrow: "→", leftarrow: "←", longleftarrow: "←",
+  leftrightarrow: "↔", Rightarrow: "⇒", implies: "⇒", Leftarrow: "⇐", Leftrightarrow: "⇔",
+  iff: "⇔", uparrow: "↑", downarrow: "↓", mapsto: "↦",
+  in: "∈", notin: "∉", ni: "∋", subset: "⊂", subseteq: "⊆", supset: "⊃", supseteq: "⊇",
+  cup: "∪", cap: "∩", emptyset: "∅", varnothing: "∅", setminus: "∖",
+  forall: "∀", exists: "∃", nexists: "∄", neg: "¬", lnot: "¬", land: "∧", wedge: "∧",
+  lor: "∨", vee: "∨", therefore: "∴", because: "∵",
+  cdots: "⋯", ldots: "…", dots: "…", vdots: "⋮", ddots: "⋱",
+  angle: "∠", perp: "⊥", parallel: "∥", degree: "°", prime: "′", hbar: "ℏ", ell: "ℓ",
+  Re: "ℜ", Im: "ℑ", surd: "√", checkmark: "✓",
+  quad: " ", qquad: "  ", space: " ",
+};
+
+function unescapeText(source: string): string {
+  return source.replace(/\\([%&$#_{}\s,;:])/g, (_match, character: string) =>
+    character === "," || character === ";" || character === ":" ? " " : character.trim() ? character : " ",
+  );
+}
+
+// Auto-wrap a paragraph that is clearly an equation but was emitted without $ delimiters.
+function autoWrapBareLatex(text: string): string {
+  if (text.includes("$")) {
+    return text;
+  }
+  if (!/\\(?:frac|dfrac|tfrac|sqrt|sum|prod|int)\b|\\text\{/.test(text)) {
+    return text;
+  }
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return text;
+  }
+  const lead = text.slice(0, text.length - text.trimStart().length);
+  const tail = text.slice(text.trimEnd().length);
+  // Render a standalone bare equation as centered display math.
+  return `${lead}$$${trimmed}$$${tail}`;
+}
+
+function renderMath(source: string): ReactNode {
+  return <>{parseLatex(source, { value: 0 })}</>;
+}
+
+// A small recursive LaTeX-to-React renderer covering the common constructs:
+// \frac, \sqrt, \text/\mathrm, subscripts, superscripts, symbols, and escapes.
+function parseLatex(src: string, counter: { value: number }): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let buffer = "";
+  let i = 0;
+  const nextKey = () => `tex-${counter.value++}`;
+  const flush = () => {
+    if (buffer) {
+      nodes.push(buffer);
+      buffer = "";
+    }
   };
 
-  return source.replace(/\\[A-Za-z]+/g, (command) => replacements[command] ?? command);
+  const readGroup = (start: number): [string, number] => {
+    let depth = 0;
+    for (let j = start; j < src.length; j += 1) {
+      if (src[j] === "{") {
+        depth += 1;
+      } else if (src[j] === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          return [src.slice(start + 1, j), j + 1];
+        }
+      }
+    }
+    return [src.slice(start + 1), src.length];
+  };
+
+  const readArg = (start: number): [string, number] => {
+    let j = start;
+    while (j < src.length && src[j] === " ") {
+      j += 1;
+    }
+    if (j >= src.length) {
+      return ["", j];
+    }
+    if (src[j] === "{") {
+      return readGroup(j);
+    }
+    if (src[j] === "\\") {
+      let k = j + 1;
+      while (k < src.length && /[a-zA-Z]/.test(src[k])) {
+        k += 1;
+      }
+      if (k === j + 1) {
+        k = j + 2;
+      }
+      return [src.slice(j, k), k];
+    }
+    return [src[j], j + 1];
+  };
+
+  while (i < src.length) {
+    const ch = src[i];
+
+    if (ch === "\\") {
+      let k = i + 1;
+      while (k < src.length && /[a-zA-Z]/.test(src[k])) {
+        k += 1;
+      }
+      const cmd = src.slice(i + 1, k);
+
+      if (cmd === "") {
+        const sym = src[i + 1] ?? "";
+        if (sym === "\\") {
+          flush();
+          nodes.push(<br key={nextKey()} />);
+          i += 2;
+          continue;
+        }
+        const escaped: Record<string, string> = {
+          "%": "%", "&": "&", $: "$", "#": "#", _: "_", "{": "{", "}": "}",
+          " ": " ", ",": " ", ";": " ", ":": " ", "!": "",
+        };
+        buffer += escaped[sym] ?? sym;
+        i += 2;
+        continue;
+      }
+
+      i = k;
+
+      if (cmd === "frac" || cmd === "dfrac" || cmd === "tfrac") {
+        const [num, ni] = readArg(i);
+        const [den, di] = readArg(ni);
+        i = di;
+        flush();
+        nodes.push(
+          <MathFraction
+            key={nextKey()}
+            numerator={parseLatex(num, counter)}
+            denominator={parseLatex(den, counter)}
+          />,
+        );
+        continue;
+      }
+
+      if (cmd === "sqrt") {
+        const [arg, ai] = readArg(i);
+        i = ai;
+        flush();
+        nodes.push(
+          <span key={nextKey()} className="inline-flex items-center">
+            <span>√</span>
+            <span className="border-t border-current">{parseLatex(arg, counter)}</span>
+          </span>,
+        );
+        continue;
+      }
+
+      if (["text", "mathrm", "operatorname", "mathbf", "mathit", "mathsf", "textbf", "textit", "textrm"].includes(cmd)) {
+        const [arg, ai] = readArg(i);
+        i = ai;
+        flush();
+        const bold = cmd === "mathbf" || cmd === "textbf";
+        const italic = cmd === "mathit" || cmd === "textit";
+        const className = [bold ? "font-semibold" : "", italic ? "italic" : ""].filter(Boolean).join(" ");
+        nodes.push(
+          <span key={nextKey()} className={className || undefined}>
+            {unescapeText(arg)}
+          </span>,
+        );
+        continue;
+      }
+
+      if (
+        ["left", "right", "bigl", "bigr", "big", "Big", "bigg", "Bigg", "displaystyle", "limits", "nolimits", "mathopen", "mathclose"].includes(
+          cmd,
+        )
+      ) {
+        continue;
+      }
+
+      const symbol = LATEX_SYMBOLS[cmd];
+      if (symbol) {
+        buffer += symbol;
+        continue;
+      }
+
+      buffer += cmd;
+      continue;
+    }
+
+    if (ch === "_" || ch === "^") {
+      const [arg, ai] = readArg(i + 1);
+      i = ai;
+      flush();
+      const inner = parseLatex(arg, counter);
+      nodes.push(ch === "_" ? <sub key={nextKey()}>{inner}</sub> : <sup key={nextKey()}>{inner}</sup>);
+      continue;
+    }
+
+    if (ch === "{") {
+      const [group, gi] = readGroup(i);
+      i = gi;
+      flush();
+      nodes.push(...parseLatex(group, counter));
+      continue;
+    }
+
+    if (ch === "}") {
+      i += 1;
+      continue;
+    }
+
+    buffer += ch;
+    i += 1;
+  }
+
+  flush();
+  return nodes;
+}
+
+function MathFraction({ numerator, denominator }: { numerator: ReactNode; denominator: ReactNode }) {
+  return (
+    <span className="mx-0.5 inline-flex flex-col items-center align-middle text-[0.9em] leading-tight">
+      <span className="px-1">{numerator}</span>
+      <span className="w-full border-t border-current px-1 text-center">{denominator}</span>
+    </span>
+  );
 }

@@ -490,6 +490,7 @@ def fetch_readable_url(url: str) -> tuple[str | None, str]:
 def search_web(query: str) -> list[CitationSource]:
     query_terms = meaningful_query_terms(build_search_query(query))
     results: list[CitationSource] = []
+    fallback: list[CitationSource] = []
     seen_urls: set[str] = set()
 
     for search_query in build_search_queries(query):
@@ -497,12 +498,16 @@ def search_web(query: str) -> list[CitationSource]:
         for candidate in candidates:
             if not candidate.url or candidate.url in seen_urls:
                 continue
+            seen_urls.add(candidate.url)
+            # Keep every candidate as a fallback so strict term filtering can never
+            # wipe out an otherwise-successful search and trigger a false "could not verify".
+            fallback.append(candidate)
             if query_terms and not result_matches_query(candidate, query_terms):
                 continue
-            seen_urls.add(candidate.url)
             results.append(candidate)
 
-    return sorted(results, key=lambda source: rank_search_result(source, query_terms))[:MAX_SEARCH_RESULTS]
+    ranked = results or fallback
+    return sorted(ranked, key=lambda source: rank_search_result(source, query_terms))[:MAX_SEARCH_RESULTS]
 
 
 def build_search_query(message: str) -> str:
