@@ -161,6 +161,7 @@ async def chat(
             model=payload.model,
             source_prompt=context.source_prompt,
             widget_prompt=context.widget_prompt,
+            attachment_prompt=context.attachment_prompt,
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Model provider request failed") from exc

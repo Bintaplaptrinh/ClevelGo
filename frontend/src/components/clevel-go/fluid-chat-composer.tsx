@@ -32,6 +32,46 @@ const spring = {
   mass: 0.9,
 };
 
+// Files the assistant can review or fix: PDFs plus common code/text formats.
+const ACCEPTED_FILE_EXTENSIONS = [
+  ".pdf",
+  ".py",
+  ".ipynb",
+  ".html",
+  ".htm",
+  ".css",
+  ".js",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".md",
+  ".mdx",
+  ".json",
+  ".txt",
+  ".yml",
+  ".yaml",
+  ".csv",
+  ".sql",
+  ".sh",
+  ".vue",
+  ".svelte",
+  ".c",
+  ".cpp",
+  ".h",
+  ".java",
+  ".go",
+  ".rb",
+  ".rs",
+  ".php",
+];
+const ACCEPT_ATTR = ACCEPTED_FILE_EXTENSIONS.join(",");
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+function isAcceptedFile(file: File) {
+  const name = file.name.toLowerCase();
+  return ACCEPTED_FILE_EXTENSIONS.some((extension) => name.endsWith(extension));
+}
+
 export function FluidChatComposer({
   disabled,
   forceDocked = false,
@@ -121,7 +161,7 @@ export function FluidChatComposer({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const message = value.trim() || (selectedFiles.length > 0 ? "Summarize the uploaded PDF." : "");
+    const message = value.trim() || (selectedFiles.length > 0 ? "Review and fix the uploaded file(s)." : "");
 
     if ((!message && selectedFiles.length === 0) || disabled || (phase !== "idle" && phase !== "bottom")) {
       return;
@@ -147,10 +187,9 @@ export function FluidChatComposer({
     const currentKeys = new Set(selectedFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
 
     for (const file of Array.from(files)) {
-      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
       const key = `${file.name}-${file.size}-${file.lastModified}`;
 
-      if (!isPdf || file.size > 8 * 1024 * 1024 || currentKeys.has(key)) {
+      if (!isAcceptedFile(file) || file.size > MAX_UPLOAD_BYTES || currentKeys.has(key)) {
         rejected.push(file.name);
         continue;
       }
@@ -160,7 +199,7 @@ export function FluidChatComposer({
     }
 
     setSelectedFiles((current) => [...current, ...accepted].slice(0, 3));
-    setFileError(rejected.length > 0 ? `PDF only. Skipped ${rejected.join(", ")}` : "");
+    setFileError(rejected.length > 0 ? `Unsupported or too large. Skipped ${rejected.join(", ")}` : "");
   };
 
   const isCompact = phase !== "idle" && phase !== "bottom";
@@ -239,7 +278,7 @@ export function FluidChatComposer({
         >
           {isDragging && !isCompact ? (
             <div className="pointer-events-none absolute inset-2 z-20 grid place-items-center rounded-[20px] border-2 border-dashed border-[#1D79F2]/50 bg-white/72 text-sm font-semibold text-[#1D79F2] backdrop-blur-xl">
-              Drop PDF here
+              Drop a PDF or code file here
             </div>
           ) : null}
           <AnimatePresence mode="wait">
@@ -279,7 +318,7 @@ export function FluidChatComposer({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,application/pdf"
+                    accept={ACCEPT_ATTR}
                     multiple
                     hidden
                     onChange={(event) => {
@@ -292,8 +331,8 @@ export function FluidChatComposer({
                     onClick={() => fileInputRef.current?.click()}
                     disabled={disabled || isThinking}
                     className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full border border-slate-200 bg-white/70 text-slate-500 transition hover:border-[#1D79F2]/50 hover:text-[#1D79F2] disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-label="Attach PDF"
-                    title="Attach PDF"
+                    aria-label="Attach file"
+                    title="Attach PDF or code file"
                   >
                     <Paperclip className="size-4" />
                   </button>

@@ -86,6 +86,7 @@ class MultiProviderChatClient:
         model: str | None = None,
         source_prompt: str = "",
         widget_prompt: str = "",
+        attachment_prompt: str = "",
     ) -> str:
         client, option = self._select(model)
 
@@ -94,6 +95,8 @@ class MultiProviderChatClient:
             messages.append({"role": "system", "content": source_prompt})
         if widget_prompt:
             messages.append({"role": "system", "content": widget_prompt})
+        if attachment_prompt:
+            messages.append({"role": "system", "content": attachment_prompt})
         messages.extend({"role": message.role, "content": message.content} for message in history)
 
         chunks = client.chat.completions.create(

@@ -176,6 +176,39 @@ MAX_FETCHED_SEARCH_RESULTS = 5
 MAX_UPLOADS = 3
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_SOURCE_CHARS = 5000
+MAX_ATTACHMENT_CHARS = 12000
+
+# Code/text formats the assistant can read directly (PDF is handled separately).
+TEXT_FILE_EXTENSIONS = {
+    ".py",
+    ".ipynb",
+    ".html",
+    ".htm",
+    ".css",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".md",
+    ".mdx",
+    ".json",
+    ".txt",
+    ".yml",
+    ".yaml",
+    ".csv",
+    ".sql",
+    ".sh",
+    ".vue",
+    ".svelte",
+    ".c",
+    ".cpp",
+    ".h",
+    ".java",
+    ".go",
+    ".rb",
+    ".rs",
+    ".php",
+}
 
 
 @dataclass
@@ -185,6 +218,7 @@ class PreparedContext:
     attachments: list[AttachmentSummary]
     source_prompt: str
     widget_prompt: str
+    attachment_prompt: str = ""
     requires_sources: bool = False
 
 
@@ -278,8 +312,16 @@ async def prepare_context(
 ) -> PreparedContext:
     sources: list[CitationSource] = []
     attachments: list[AttachmentSummary] = []
+    file_contexts: list[tuple[str, str]] = []
     urls = extract_urls(message)
-    requires_sources = bool(urls or uploads)
+
+    # Reference documents (URLs, PDFs) require grounded citations; code/text uploads
+    # are working material and should not trigger the "could not verify" guard.
+    has_doc_upload = any(
+        (upload.content_type == "application/pdf") or (upload.filename or "").lower().endswith(".pdf")
+        for upload in uploads
+    )
+    requires_sources = bool(urls) or has_doc_upload
 
     for url in urls[:MAX_URLS]:
         source = fetch_url_source(url)
@@ -287,10 +329,12 @@ async def prepare_context(
             sources.append(source)
 
     for upload in list(uploads)[:MAX_UPLOADS]:
-        attachment, source = await extract_upload(upload)
+        attachment, source, code_text = await extract_upload(upload)
         attachments.append(attachment)
         if source:
             sources.append(source)
+        if code_text:
+            file_contexts.append((attachment.name, code_text))
 
     if not sources and should_search_web(message):
         requires_sources = requires_sources or should_require_sources(message)
@@ -307,6 +351,7 @@ async def prepare_context(
         attachments=attachments,
         source_prompt=build_source_prompt(sources, requires_sources=requires_sources),
         widget_prompt=build_widget_prompt(widgets),
+        attachment_prompt=build_attachment_prompt(file_contexts),
         requires_sources=requires_sources,
     )
 
@@ -615,36 +660,134 @@ def source_rank(source: CitationSource) -> tuple[int, int]:
     return (3, source.id)
 
 
-async def extract_upload(upload: UploadFile) -> tuple[AttachmentSummary, CitationSource | None]:
+async def extract_upload(
+    upload: UploadFile,
+) -> tuple[AttachmentSummary, CitationSource | None, str | None]:
+    """Read an upload.
+
+    Returns ``(attachment, source, code_text)`` where:
+    - ``source`` is set for citeable reference documents (PDF),
+    - ``code_text`` is set for code/text files the assistant should work on.
+    """
+
     data = await upload.read(MAX_UPLOAD_BYTES + 1)
     filename = upload.filename or "uploaded-file"
     mime_type = upload.content_type or "application/octet-stream"
 
     if len(data) > MAX_UPLOAD_BYTES:
         summary = "File was larger than the upload limit and was not read."
-        return make_attachment(filename, mime_type, len(data), summary), None
+        return make_attachment(filename, mime_type, len(data), summary), None, None
 
     lowered = filename.lower()
+    extension = f".{lowered.rsplit('.', 1)[-1]}" if "." in lowered else ""
+
     try:
         if mime_type == "application/pdf" or lowered.endswith(".pdf"):
             text = extract_pdf_text(data)
             summary = summarize_text("PDF", text)
-        else:
-            summary = "Unsupported file type. Upload a PDF file."
-            return make_attachment(filename, mime_type, len(data), summary), None
+            attachment = make_attachment(filename, mime_type, len(data), summary)
+            source = CitationSource(
+                id=0,
+                title=filename,
+                url=None,
+                snippet=text[:MAX_SOURCE_CHARS],
+                sourceType="file",
+            )
+            return attachment, source, None
+
+        if lowered.endswith(".ipynb"):
+            text = extract_notebook_text(data)
+            summary = summarize_text("Notebook", text)
+            return make_attachment(filename, mime_type, len(data), summary), None, text
+
+        if extension in TEXT_FILE_EXTENSIONS:
+            text = decode_text(data)
+            summary = summarize_text("Code/text", text)
+            return make_attachment(filename, mime_type, len(data), summary), None, text
+
+        summary = "Unsupported file type. Upload a PDF or a code/text file."
+        return make_attachment(filename, mime_type, len(data), summary), None, None
     except Exception as exc:
         summary = f"Could not read file: {exc}"
-        return make_attachment(filename, mime_type, len(data), summary), None
+        return make_attachment(filename, mime_type, len(data), summary), None, None
 
-    attachment = make_attachment(filename, mime_type, len(data), summary)
-    source = CitationSource(
-        id=0,
-        title=filename,
-        url=None,
-        snippet=text[:MAX_SOURCE_CHARS],
-        sourceType="file",
-    )
-    return attachment, source
+
+def decode_text(data: bytes) -> str:
+    return normalize_code_text(data.decode("utf-8", errors="replace"))
+
+
+def normalize_code_text(value: str) -> str:
+    # Preserve indentation and blank lines that matter for code; only fix line endings.
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+
+
+def extract_notebook_text(data: bytes) -> str:
+    notebook = json.loads(data.decode("utf-8", errors="replace"))
+    blocks: list[str] = []
+    for cell in notebook.get("cells", []):
+        source = cell.get("source", "")
+        if isinstance(source, list):
+            source = "".join(source)
+        source = normalize_code_text(str(source))
+        if not source:
+            continue
+        if cell.get("cell_type") == "code":
+            blocks.append(f"```python\n{source}\n```")
+        else:
+            blocks.append(source)
+    return "\n\n".join(blocks)
+
+
+def build_attachment_prompt(file_contexts: list[tuple[str, str]]) -> str:
+    if not file_contexts:
+        return ""
+
+    blocks = [
+        "Uploaded Files",
+        "The user uploaded the following file(s) as working material to review, fix, refactor, or explain. "
+        "This is the user's own content, not a citation source, so do not add bracket citations for it. "
+        "When fixing or improving code, return the corrected code in fenced code blocks and briefly explain what changed.",
+    ]
+    for name, text in file_contexts:
+        language = language_hint(name)
+        blocks.append(f"File: {name}\n```{language}\n{text[:MAX_ATTACHMENT_CHARS]}\n```")
+    return "\n\n".join(blocks)
+
+
+def language_hint(filename: str) -> str:
+    lowered = filename.lower()
+    mapping = {
+        ".py": "python",
+        ".ipynb": "python",
+        ".html": "html",
+        ".htm": "html",
+        ".css": "css",
+        ".js": "javascript",
+        ".jsx": "jsx",
+        ".ts": "typescript",
+        ".tsx": "tsx",
+        ".md": "markdown",
+        ".mdx": "markdown",
+        ".json": "json",
+        ".yml": "yaml",
+        ".yaml": "yaml",
+        ".sql": "sql",
+        ".sh": "bash",
+        ".vue": "vue",
+        ".svelte": "svelte",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".h": "c",
+        ".java": "java",
+        ".go": "go",
+        ".rb": "ruby",
+        ".rs": "rust",
+        ".php": "php",
+    }
+    for extension, language in mapping.items():
+        if lowered.endswith(extension):
+            return language
+    return ""
 
 
 def make_attachment(filename: str, mime_type: str, size: int, summary: str) -> AttachmentSummary:
