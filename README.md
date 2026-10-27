@@ -2,6 +2,8 @@
 
 Clevel Go is an AI work assistant with a ChatGPT-style web interface and a FastAPI backend. It is built to help with research, planning, writing, coding, document review, and task execution while keeping factual answers grounded with fetched sources and citations.
 
+[Try the live demo](https://live-clevelgo.bintaplaptrinh.io.vn/)
+
 ![Clevel Go chat UI](photo/clevel-go-home.png)
 
 ## What It Includes
@@ -71,6 +73,3 @@ python -m py_compile app/main.py
 - `GET /api/conversations/{conversation_id}`
 - `DELETE /api/conversations/{conversation_id}`
 
-## Screenshot
-
-The README image is captured from the running local app and saved at `photo/clevel-go-home.png`.
